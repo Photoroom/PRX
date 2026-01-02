@@ -535,29 +535,10 @@ class LatentDiffusion(ComposerModel):
                 generator=rng_generator,
             )
 
-    def _should_use_cfg(self, guidance_scale: float, cfg_zero: bool, denoiser: torch.nn.Module) -> bool:
-        """Determine if classifier-free guidance should be used.
-
-        CFG is used when:
-        - guidance_scale > 1.0 OR cfg_zero is enabled
-        - AND denoiser doesn't have built-in guidance embeddings
-
-        Args:
-            guidance_scale: Guidance scale value
-            cfg_zero: Whether CFG-Zero variant is enabled
-            denoiser: The denoiser model
-
-        Returns:
-            True if CFG should be applied
-        """
-        return (guidance_scale > 1.0 or cfg_zero) and not getattr(denoiser, "guidance_embed", False)
-
     def _compute_cfg_guidance(
         self,
         model_output: torch.Tensor,
         guidance_scale: float,
-        cfg_zero: bool,
-        is_first_step: bool,
     ) -> torch.Tensor:
         """Compute classifier-free guidance from conditional and unconditional predictions.
 
@@ -568,29 +549,12 @@ class LatentDiffusion(ComposerModel):
         Args:
             model_output: Concatenated [uncond, cond] model predictions
             guidance_scale: Guidance strength
-            cfg_zero: Whether to use CFG-Zero variant
-            is_first_step: Whether this is the first denoising step
 
         Returns:
             Guided model output
         """
         model_output_uncond, model_output_text = model_output.chunk(2)
-
-        if cfg_zero:
-            if is_first_step:
-                # CFG-Zero: Skip unconditional prediction on first step
-                return model_output_text
-            else:
-                # CFG-Zero: Alignment-based weighting
-                alignment_weight = (
-                    torch.einsum("bjkl,bjkl->b", model_output_text, model_output_uncond)
-                    / torch.einsum("bjkl,bjkl->b", model_output_uncond, model_output_uncond)
-                )[:, None, None, None]
-
-                return (1.0 - guidance_scale) * alignment_weight * model_output_uncond + guidance_scale * model_output_text
-        else:
-            # Standard CFG
-            return model_output_uncond + guidance_scale * (model_output_text - model_output_uncond)
+        return model_output_uncond + guidance_scale * (model_output_text - model_output_uncond)
 
     @torch.no_grad()  # type: ignore
     def generate(
@@ -603,7 +567,6 @@ class LatentDiffusion(ComposerModel):
         progress_bar: bool = False,
         init_latents: torch.Tensor | None = None,
         denoiser: torch.nn.Module | None = None,
-        cfg_zero: bool = False,
         decode_latents: bool = True,
     ) -> torch.Tensor:
         """Generate images from noise using the diffusion model.
@@ -617,7 +580,6 @@ class LatentDiffusion(ComposerModel):
             progress_bar: Show progress bar
             init_latents: Optional pre-initialized latents
             denoiser: Optional denoiser override (defaults to EMA if active)
-            cfg_zero: Use CFG-Zero variant
             decode_latents: Decode to image space (vs return latents)
 
         Returns:
@@ -633,7 +595,7 @@ class LatentDiffusion(ComposerModel):
         latents = self._initialize_latents(batch_size, image_size, init_latents, seed, device)
 
         # 3. Prepare denoiser inputs
-        do_cfg = self._should_use_cfg(guidance_scale, cfg_zero, denoiser)
+        do_cfg = (guidance_scale > 1.0)
         if BatchKeys.image_latent not in batch:
             batch[BatchKeys.image_latent] = latents
         denoiser_kwargs = self.get_denoiser_kwargs(batch=batch, do_cfg=do_cfg)
@@ -647,7 +609,6 @@ class LatentDiffusion(ComposerModel):
         latents = latents * self.inference_scheduler.init_noise_sigma
 
         # 5. Denoising loop
-        cfg_zero_first_step = cfg_zero
         for t in tqdm(self.inference_scheduler.timesteps, disable=not progress_bar):
             # Prepare input
             latent_input = torch.cat([latents] * (1 + int(do_cfg)))
@@ -662,15 +623,12 @@ class LatentDiffusion(ComposerModel):
 
             # Apply guidance
             if do_cfg:
-                model_output = self._compute_cfg_guidance(model_output, guidance_scale, cfg_zero, cfg_zero_first_step)
-                cfg_zero_first_step = False
-
+                model_output_uncond, model_output_text = model_output.chunk(2)
+                model_output = model_output_uncond + guidance_scale * (model_output_text - model_output_uncond)
             # Scheduler step
             latents = self.inference_scheduler.step(model_output, t, latents, generator=None)
-
         # 6. Decode if requested
         return self.latent_to_image(latents).detach() if decode_latents else latents
-
 
 if __name__ == "__main__":
     from models_factory import build_pipeline
