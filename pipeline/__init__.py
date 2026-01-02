@@ -1,4 +1,5 @@
-from pipeline.pipeline import EMAModel, LatentDiffusion, ModelInputs
+from pipeline.pipeline import EMAModel, LatentDiffusion
+from pipeline.constants import ModelInputs
 
 __all__ = [
     "LatentDiffusion",
