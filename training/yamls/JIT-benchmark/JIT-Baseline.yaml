@@ -1,5 +1,5 @@
 defaults:
-  - pipeline: prx_jit_32
+  - /pipeline: prx_jit_32
   - /dataset@dataset.train_dataset: train_small
   - /dataset@dataset.eval_dataset: eval_unsplash
   - /prompts@callbacks.image_monitor.prompt: eval_prompts
@@ -120,7 +120,7 @@ trainer:
   run_name: ${group}-${name}
   seed: ${seed}
   scale_schedule_ratio: 1.0
-  save_folder: /home/davidb/prx/checkpoints/JIT-repaV2
+  save_folder: checkpoints/JIT-baseline
   save_interval: 10_000ba
   save_num_checkpoints_to_keep: 1
   save_overwrite: true  
