@@ -1,4 +1,5 @@
-# FLUX.1-dev VAE (16 channels, 8x compression)
-# Default VAE for PRX models
+# FLUX.2-dev VAE (32 channels, 8x compression)
 model_name: black-forest-labs/FLUX.2-dev
+model_class: AutoencoderKL
+default_channels: 32
 torch_dtype: torch.bfloat16

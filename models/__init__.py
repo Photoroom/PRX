@@ -1,5 +1,5 @@
 from models.text_tower import TextTower, TextTowerPresets
-from models.vae_tower import VaeTower, VaeTowerPresets
+from models.vae_tower import VaeTower
 from models.prx import (
     PRX,
     PRXParams,
@@ -43,5 +43,4 @@ __all__ = [
     "TextTowerPresets",
     # VAE tower
     "VaeTower",
-    "VaeTowerPresets",
 ]

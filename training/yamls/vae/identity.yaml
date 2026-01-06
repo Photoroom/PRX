@@ -1,4 +1,5 @@
 # Identity VAE (passthrough, no encoding)
-# For testing and debugging
 model_name: identity
+model_class: IdentityVAE
+default_channels: 3
 torch_dtype: torch.bfloat16

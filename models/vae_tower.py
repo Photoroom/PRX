@@ -1,37 +1,9 @@
-from typing import Any, Dict
+from typing import Dict
 
 import torch
 import torch.nn as nn
 from diffusers import AutoencoderDC, AutoencoderKL
 from transformers.modeling_utils import ModuleUtilsMixin
-
-
-VaeTowerPresets: Dict[str, Dict[str, Any]] = {
-    "black-forest-labs/FLUX.1-dev": {
-        "model_name": "black-forest-labs/FLUX.1-dev",
-        "model_class": "AutoencoderKL",
-        "default_scale_factor": 8,
-        "default_channels": 16,
-    },
-    "mit-han-lab/dc-ae-f32c32-sana-1.1-diffusers": {
-        "model_name": "mit-han-lab/dc-ae-f32c32-sana-1.1-diffusers",
-        "model_class": "AutoencoderDC",
-        "default_scale_factor": 32,
-        "default_channels": 32,
-    },
-    "identity": {
-        "model_name": "identity",
-        "model_class": "IdentityVAE",
-        "default_scale_factor": 1,
-        "default_channels": 3,
-    },
-    "black-forest-labs/FLUX.2-dev": {
-        "model_name": "black-forest-labs/FLUX.2-dev",
-        "model_class": "AutoencoderKL",
-        "default_scale_factor": 8,
-        "default_channels": 32,
-    },
-}
 
 
 class IdentityVAE(nn.Module):
@@ -95,10 +67,14 @@ class VaeTower(torch.nn.Module, ModuleUtilsMixin):
     def __init__(
         self,
         model_name: str = "flux-dev",
+        model_class: str = "AutoencoderKL",
+        default_channels: int = 16,
         torch_dtype: torch.dtype = torch.float32,
     ) -> None:
         super().__init__()
         self.torch_dtype = torch_dtype
+        self.model_class = model_class
+        self.default_channels = default_channels
 
         self.vae = self.create_model(model_name)
 
@@ -131,12 +107,8 @@ class VaeTower(torch.nn.Module, ModuleUtilsMixin):
         elif hasattr(self.vae, "config") and hasattr(self.vae.config, "in_channels"):
             self.latent_channels = int(self.vae.config.in_channels)
         else:
-            # Try to infer from model name or default
-            preset_key = getattr(self, "_preset_key", None)
-            if preset_key and preset_key in VaeTowerPresets:
-                self.latent_channels = int(VaeTowerPresets[preset_key]["default_channels"])
-            else:
-                self.latent_channels = 4  # default
+            # Use default_channels from YAML config (passed to __init__)
+            self.latent_channels = self.default_channels
 
     @property
     def encoder(self) -> torch.nn.Module:
@@ -168,22 +140,17 @@ class VaeTower(torch.nn.Module, ModuleUtilsMixin):
         """Return the dtype of the underlying VAE."""
         return next(self.vae.parameters()).dtype
 
-    def create_model(self, model_config: str) -> torch.nn.Module:
+    def create_model(self, model_name: str) -> torch.nn.Module:
         """Create VAE model based on config."""
-        self._preset_key = model_config
-
-        if model_config in VaeTowerPresets:
-            preset = VaeTowerPresets[model_config]
-            model_name = preset["model_name"]
-            model_class = preset["model_class"]
-        else:
-            model_name = model_config
-            model_class = "AutoencoderDC" if "dc" in model_name.lower() else "AutoencoderKL"
+        # Use the model_class from __init__ parameter (from YAML config)
+        model_class = self.model_class
 
         # Handle identity VAE for pixel-space diffusion
         if model_class == "IdentityVAE":
-            channels = preset.get("default_channels", 3)
-            return IdentityVAE(channels=channels, torch_dtype=self.torch_dtype)
+            return IdentityVAE(
+                channels=self.default_channels,
+                torch_dtype=self.torch_dtype
+            )
 
         vae_class = AutoencoderDC if model_class == "AutoencoderDC" else AutoencoderKL
 
