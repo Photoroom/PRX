@@ -131,7 +131,7 @@ class Tread(Algorithm):
         """
         Split positional encodings into visible and routed subsets based on indices.
 
-        This function assumes `pe` only contains image tokens (Mirage-style).
+        This function assumes `pe` only contains image tokens (PRX-style).
         For Flux, where `pe` = [txt | img], we explicitly split text/image in
         `_pre_route_start` and call this only on the image part.
         """
@@ -164,19 +164,15 @@ class Tread(Algorithm):
         """
         Inject compute_attn_mask_in_block flag for Flux models when routing will be active.
 
-        This hook is registered on the denoiser's forward method to ensure that
-        FluxEasyControl models compute attention masks at the block level during
-        token routing, since token counts change between route_start and route_end.
-
         Note: This is called before blocks execute, so we set the flag proactively
         when TREAD is enabled (routing_probability > 0). The actual routing happens
         in _pre_route_start hook on the first routed block.
 
-        Only injects for Flux models (which have FluxEasyControl blocks), not Mirage.
+        Only injects for Flux models, not PRX.
         """
         if self._enabled and self.routing_probability > 0:
             # Only inject for Flux models (check if model accepts this parameter)
-            # Mirage models don't have **kwargs in forward and will error
+            # PRX models don't have **kwargs in forward and will error
             model_class_name = _module.__class__.__name__
             if "Flux" in model_class_name:
                 kwargs["compute_attn_mask_in_block"] = True
@@ -317,7 +313,7 @@ class Tread(Algorithm):
         """
         Pre-hook at route_start: sample and split tokens into visible and routed subsets.
 
-        For Mirage:
+        For PRX:
             `pe` shape is [B, 1, N_img, ...] → we route all tokens in `pe`.
 
         For Flux:
@@ -356,7 +352,7 @@ class Tread(Algorithm):
             total_pe_tokens = pe.shape[2]
 
             if total_pe_tokens == num_tokens:
-                # MIRAGE-style: PE only for image tokens
+                # PRX-style: PE only for image tokens
                 visible_pe, routed_pe = self._split_positional_encoding(pe, routed_idx, visible_idx)
                 self._visible_pe = visible_pe
 
@@ -412,7 +408,7 @@ class Tread(Algorithm):
         Post-hook at route_end: reconstruct full image sequence by merging visible and routed tokens.
 
         Handles two cases:
-          - Mirage blocks: output is a Tensor (img only).
+          - PRX blocks: output is a Tensor (img only).
           - Flux blocks:   output is a tuple (img, txt, ...). We route only the img part
                            and pass txt (and any extra elements) through unchanged.
         """
