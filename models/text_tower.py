@@ -92,14 +92,14 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
         text = re.sub(r"[\u4e00-\u9fff]+", "", text)
         #######################################################
 
-        # все виды тире / all types of dash --> "-"
+        # all types of dash --> "-"
         text = re.sub(
             r"[\u002D\u058A\u05BE\u1400\u1806\u2010-\u2015\u2E17\u2E1A\u2E3A\u2E3B\u2E40\u301C\u3030\u30A0\uFE31\uFE32\uFE58\uFE63\uFF0D]+",  # noqa
             "-",
             text,
         )
 
-        # кавычки к одному стандарту
+        # standardize quotation marks
         text = re.sub(r"[`´«»“”¨]", '"', text)
         text = re.sub(r"[‘’]", "'", text)
 
@@ -214,11 +214,11 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
 
         return TokenResult(tokens["input_ids"], tokens["attention_mask"].bool())
 
-    @torch.no_grad()  # type: ignore
+    @torch.no_grad()
     def token_to_embed(self, tokens: torch.Tensor, attention_mask: torch.Tensor) -> dict[str, torch.Tensor]:
         # Note: /!\ Explicitly disabling autocast here
         with torch.autocast("cuda", enabled=False):
-            emb = self.text_encoder(  # type: ignore
+            emb = self.text_encoder(
                 input_ids=tokens,
                 attention_mask=attention_mask,
                 output_hidden_states=not self.use_last_hidden_state,
@@ -247,7 +247,7 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
             if self.unpadded and num_pad_tokens is not None:
                 text_encoder_out["attention_mask"] = text_encoder_out["attention_mask"][:, :num_pad_tokens]
 
-        return text_encoder_out  # type: ignore
+        return text_encoder_out
 
     def forward(self, texts: str | list[str]) -> dict[str, torch.Tensor]:
         return self.text_to_embed(texts)
