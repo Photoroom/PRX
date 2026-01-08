@@ -31,9 +31,6 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
         r"[" + "#®•©™&@·º½¾¿¡§~" + "\)" + "\(" + "\]" + "\[" + "\}" + "\{" + "\|" + "\\" + "\/" + "\*" + r"]{1,}"
     )  # noqa
 
-    # TODO: would probably be easier to define one base text tower class,
-    # and then inherit from it to create the different configs
-
     def __init__(
         self,
         model_name: str = "t5gemma2b-256-bf16",
