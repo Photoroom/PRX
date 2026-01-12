@@ -352,77 +352,117 @@ class ProcessedDataset:
         """Get raw sample - must be implemented by subclasses."""
         raise NotImplementedError
 
+    def _get_sampler(self, shuffle: bool) -> Optional[torch.utils.data.Sampler]:
+        """Get sampler for this dataset. Override in subclasses if needed."""
+        return dist.get_sampler(self, shuffle=shuffle)
+
+    def get_dataloader(
+        self,
+        batch_size: int,
+        shuffle: bool = True,
+        drop_last: bool = True,
+        **dataloader_kwargs: Any,
+    ) -> DataLoader:
+        """Create a DataLoader for this dataset.
+
+        Args:
+            batch_size: Number of samples per batch.
+            shuffle: Whether to shuffle samples.
+            drop_last: Whether to drop the last incomplete batch.
+            **dataloader_kwargs: Additional arguments passed to DataLoader.
+
+        Returns:
+            Configured DataLoader instance.
+        """
+        return DataLoader(
+            dataset=self,
+            batch_size=batch_size,
+            sampler=self._get_sampler(shuffle),
+            drop_last=drop_last,
+            collate_fn=lambda batch: default_collate([x for x in batch if x is not None]),
+            **dataloader_kwargs,
+        )
+
+
 # ============================================================================
 # Dummy Dataset
 # ============================================================================
 
-def build_dummy_dataloader(
-    batch_size: int,
-    image_size: tuple[int, int] = (256, 256),
-    text_tower: str = "t5gemma2b-256-bf16",
-    num_samples: int = 1_000_000,
-    has_text_latents: bool = True,
-    has_mask_text_latents: bool = False,
-    prefetch_factor: int = 4,
-    num_workers: int = 32,
-    **_kwargs: Any,
-) -> DataLoader:
-    """Build a dummy dataloader for testing."""
+class DummyDataset(torch.utils.data.Dataset):
+    """Dataset that generates random data for testing.
 
-    class DummyDataset(torch.utils.data.Dataset):
-        """Dummy dataset for testing."""
+    Args:
+        num_samples: Number of samples in the dataset.
+        image_size: Size of generated images as (height, width).
+        text_tower: Name of the text encoder preset for latent dimensions.
+        has_text_latents: Whether to generate text latents.
+        has_mask_text_latents: Whether to generate attention masks for text latents.
+    """
 
-        def __init__(self, num_samples: int, image_size: tuple[int, int], text_tower: str,
-                     has_text_latents: bool, has_mask_text_latents: bool):
-            self.num_samples = num_samples
-            self.image_size = image_size
-            self.text_tower = text_tower
-            self.has_text_latents = has_text_latents
-            self.has_mask_text_latents = has_mask_text_latents
-            self.seq_len = TextTowerPresets[text_tower]["model_max_length"]
+    def __init__(
+        self,
+        num_samples: int = 1_000_000,
+        image_size: tuple[int, int] = (256, 256),
+        text_tower: str = "t5gemma2b-256-bf16",
+        has_text_latents: bool = True,
+        has_mask_text_latents: bool = False,
+    ):
+        self.num_samples = num_samples
+        self.image_size = image_size
+        self.text_tower = text_tower
+        self.has_text_latents = has_text_latents
+        self.has_mask_text_latents = has_mask_text_latents
+        self.seq_len = TextTowerPresets[text_tower]["model_max_length"]
 
-            # Get embedding dimension
-            if "t5xxl" in text_tower:
-                self.hidden_dim = 4096
-            elif "t5gemma2b" in text_tower:
-                self.hidden_dim = 2304
-            else:
-                raise ValueError(f"Unknown text tower: {text_tower}")
+        # Get embedding dimension
+        if "t5xxl" in text_tower:
+            self.hidden_dim = 4096
+        elif "t5gemma2b" in text_tower:
+            self.hidden_dim = 2304
+        else:
+            raise ValueError(f"Unknown text tower: {text_tower}")
 
-        def __len__(self) -> int:
-            return self.num_samples
+    def __len__(self) -> int:
+        return self.num_samples
 
-        def __getitem__(self, idx: int) -> Dict[BatchKeys, Any]:
-            sample = {
-                BatchKeys.IMAGE: torch.rand(3, *self.image_size),
-                BatchKeys.PROMPT: "".join(random.choices(string.ascii_lowercase + " ", k=32)),
-            }
+    def __getitem__(self, idx: int) -> Dict[BatchKeys, Any]:
+        sample = {
+            BatchKeys.IMAGE: torch.rand(3, *self.image_size),
+            BatchKeys.PROMPT: "".join(random.choices(string.ascii_lowercase + " ", k=32)),
+        }
 
-            if self.has_text_latents:
-                sample[BatchKeys.PROMPT_EMBEDDING] = torch.randn(self.seq_len, self.hidden_dim)
-                if self.has_mask_text_latents:
-                    sample[BatchKeys.PROMPT_EMBEDDING_MASK] = torch.ones(self.seq_len, dtype=torch.bool)
+        if self.has_text_latents:
+            sample[BatchKeys.PROMPT_EMBEDDING] = torch.randn(self.seq_len, self.hidden_dim)
+            if self.has_mask_text_latents:
+                sample[BatchKeys.PROMPT_EMBEDDING_MASK] = torch.ones(self.seq_len, dtype=torch.bool)
 
-            return sample
+        return sample
 
-    dataset = DummyDataset(
-        num_samples=num_samples,
-        image_size=image_size,
-        text_tower=text_tower,
-        has_text_latents=has_text_latents,
-        has_mask_text_latents=has_mask_text_latents,
-    )
+    def get_dataloader(
+        self,
+        batch_size: int,
+        shuffle: bool = True,
+        drop_last: bool = True,
+        **dataloader_kwargs: Any,
+    ) -> DataLoader:
+        """Create a DataLoader for this dataset.
 
-    sampler = dist.get_sampler(dataset, shuffle=True)
+        Args:
+            batch_size: Number of samples per batch.
+            shuffle: Whether to shuffle samples.
+            drop_last: Whether to drop the last incomplete batch.
+            **dataloader_kwargs: Additional arguments passed to DataLoader.
 
-    return DataLoader(
-        dataset,
-        batch_size=batch_size,
-        sampler=sampler,
-        drop_last=True,
-        collate_fn=lambda batch: default_collate([x for x in batch if x is not None]),
-        prefetch_factor=prefetch_factor,
-        num_workers=num_workers,
-    )
+        Returns:
+            Configured DataLoader instance.
+        """
+        return DataLoader(
+            dataset=self,
+            batch_size=batch_size,
+            sampler=dist.get_sampler(self, shuffle=shuffle),
+            drop_last=drop_last,
+            collate_fn=lambda batch: default_collate([x for x in batch if x is not None]),
+            **dataloader_kwargs,
+        )
 
 
