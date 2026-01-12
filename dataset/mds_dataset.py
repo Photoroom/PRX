@@ -5,7 +5,7 @@ from typing import Any, List, Optional, Union, Sequence, Iterator, Tuple, Callab
 
 
 import torch
-from torch.utils.data import DataLoader, default_collate
+from torch.utils.data import DataLoader
 
 from streaming.base.constant import TICK
 from streaming.base.format import Reader, reader_from_json
@@ -13,12 +13,14 @@ from streaming import Stream, StreamingDataset
 from streaming.base.util import wait_for_file_to_exist
 from streaming.base.world import World
 
-from .constants import BatchKeys
 from .dataset import ProcessedDataset, DEFAULT_DATA_AUG_TARGETS
 from .dataset import logger
 from .mds_patches import patch_mds_encoding
 
 patch_mds_encoding()
+
+INDEX_FILE = "index.json"
+INDEX_FILE_SUFFIX = "_index.json"
 
 def get_nb_samples_in_stream(index_file: str) -> int:
     total_samples = 0
@@ -29,12 +31,12 @@ def get_nb_samples_in_stream(index_file: str) -> int:
     return total_samples
 
 
-def get_split_folders(path: str, file_name: str = "index.json") -> List[str]:
+def get_split_folders(path: str, file_name: str = INDEX_FILE) -> List[str]:
     """Get list of folders containing the specified index file.
 
     Args:
         path: Local filesystem path to search
-        file_name: Name of the index file to look for (default: "index.json")
+        file_name: Name of the index file to look for (default: INDEX_FILE)
 
     Returns:
         List of folder paths containing the index file
@@ -82,7 +84,7 @@ def get_local_iterator(
             proportion = proportions
 
         # Check for index files in root
-        index_files = [f for f in os.listdir(local_path) if f.endswith("_index.json")]
+        index_files = [f for f in os.listdir(local_path) if f.endswith(INDEX_FILE_SUFFIX)]
 
         if index_files:
             # Multiple streams in root - use cache workaround
@@ -96,11 +98,11 @@ def get_local_iterator(
                 yield local_path, f"/tmp/{tmp_path}_{i}/", index_file, prop
         else:
             # Check subfolders
-            folders = get_split_folders(local_path, "index.json")
+            folders = get_split_folders(local_path, INDEX_FILE)
             stream_props = split_proportion(proportion, folders) if proportion else [None] * len(folders)
 
             for folder, prop in zip(folders, stream_props):
-                yield None, folder, "index.json", prop
+                yield None, folder, INDEX_FILE, prop
 
 
 def get_remote_iterator(
@@ -134,11 +136,11 @@ def get_remote_iterator(
 
     # Iterate over pairs
     for remote_path, local_path in zip(remote_paths, local_paths):
-        remote_folders = get_split_folders(remote_path, "index.json")
+        remote_folders = get_split_folders(remote_path, INDEX_FILE)
         local_folders = [os.path.join(local_path, str(i)) for i in range(len(remote_folders))]
 
         for remote, local in zip(remote_folders, local_folders):
-            yield remote, local, "index.json", None
+            yield remote, local, INDEX_FILE, None
 
 
 def split_proportion(proportion: Optional[float], items: List[Any]) -> List[Optional[float]]:
@@ -156,11 +158,10 @@ def split_proportion(proportion: Optional[float], items: List[Any]) -> List[Opti
 
 class PatchedStream(Stream):
     """
-    Inherit form Stream.
     Update the get_shards method to take any index file not only index.json
     """
 
-    def __init__(self, index_file: str = "index.json", *args: Any, **kwargs: Any):
+    def __init__(self, index_file: str = INDEX_FILE, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.index_file = index_file
 
@@ -177,34 +178,34 @@ class PatchedStream(Stream):
             `List[Reader]: Shard readers.
         """
         basename = self.index_file
-        filename = os.path.join(self.local, self.split, basename)  # pyright: ignore
-        if not os.path.exists(filename):
+        filepath = os.path.join(self.local, self.split, basename)  # pyright: ignore
+        if not os.path.exists(filepath):
             if world.is_local_leader:
                 if self.remote:
                     # Downloads the `index.json` as `index.json.tmp` fully and then rename it to
                     # `index.json` since only one process downloads the `index.json` file while
                     # other processes wait for it to get downloaded. Hence, It avoids loading the
                     # in-progress downloading `index.json`.
-                    tmp_filename = self._download_file(basename, basename + ".tmp")
-                    os.rename(tmp_filename, filename)
+                    tmp_filepath = self._download_file(basename, basename + ".tmp")
+                    os.rename(tmp_filepath, filepath)
                 else:
-                    if not os.path.exists(filename):
+                    if not os.path.exists(filepath):
                         raise RuntimeError(
-                            f"No `remote` provided, but local file {filename} " + "does not exist either"
+                            f"No `remote` provided, but local file {filepath} " + "does not exist either"
                         )
             else:
                 wait_for_file_to_exist(
-                    filename,
+                    filepath,
                     TICK,
                     self.download_timeout,
                     f"Index file {os.path.join(self.remote or '', self.split or '', basename)} "
-                    + f"-> {filename} took too long to download or failed to download. Either increase the "
+                    + f"-> {filepath} took too long to download or failed to download. Either increase the "
                     + "`download_timeout` value or check the local rank 0 traceback.",
                 )
         try:
-            obj = json.load(open(filename))
+            obj = json.load(open(filepath))
         except json.decoder.JSONDecodeError as error:
-            error.args = (f"Index file at {filename} is empty or corrupted. " + error.args[0],)
+            error.args = (f"Index file at {filepath} is empty or corrupted. " + error.args[0],)
             raise error
 
         # Version check.
@@ -226,12 +227,32 @@ class PatchedStream(Stream):
         Returns:
             int: Size in bytes.
         """
-        filename = os.path.join(self.local, self.split, self.index_file)
-        return os.stat(filename).st_size
+        filepath = os.path.join(self.local, self.split, self.index_file)
+        return os.stat(filepath).st_size
 
 
-class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
-    """Streaming dataset implementation."""
+class StreamingProcessedDataset(ProcessedDataset):
+    """Dataset that combines MosaicML streaming with sample processing.
+
+    Args:
+        streams: Sequence of Stream objects defining data sources.
+        caption_keys: Caption field name(s), optionally with sampling weights.
+        text_tower: Name of the text encoder preset for latent lookups.
+        split: Dataset split name.
+        download_retry: Number of download retries per shard.
+        download_timeout: Timeout in seconds for shard downloads.
+        predownload: Number of shards to pre-download per worker.
+        cache_limit: Maximum cache size (e.g., "1tb", "500gb").
+        num_canonical_nodes: Number of canonical nodes for deterministic shuffling.
+        batch_size: Batch size for batching method calculations.
+        shuffle: Whether to shuffle samples.
+        shuffle_seed: Random seed for shuffling.
+        has_text_latents: Whether samples contain precomputed text latents.
+        has_mask_text_latents: Whether samples contain attention masks for text latents.
+        batching_method: How to batch across streams ("per_stream" or "random").
+        transforms: List of transforms to apply to images.
+        transforms_targets: Image keys to apply transforms to.
+    """
 
     def __init__(
         self,
@@ -253,8 +274,7 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
         transforms: Optional[List[Callable]] = None,
         transforms_targets: Union[List[str], str] = DEFAULT_DATA_AUG_TARGETS,
     ):
-        StreamingDataset.__init__(
-            self,
+        self._streaming_dataset = StreamingDataset(
             streams=streams,
             remote=None,
             local=None,
@@ -281,11 +301,27 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
             transforms_targets=transforms_targets,
         )
 
-    def __getitem__(self, index: int) -> Optional[Dict[BatchKeys, Any]]:
-        return ProcessedDataset.__getitem__(self, index)
+    def __len__(self) -> int:
+        return len(self._streaming_dataset)
 
     def _get_raw_item(self, index: int) -> Dict[str, Any]:
-        return StreamingDataset.__getitem__(self, index)
+        return self._streaming_dataset[index]
+
+    @property
+    def size(self) -> int:
+        return self._streaming_dataset.size
+
+    @property
+    def streams(self) -> Sequence[Stream]:
+        return self._streaming_dataset.streams
+
+    @property
+    def samples_per_stream(self) -> List[int]:
+        return self._streaming_dataset.samples_per_stream
+
+    def _get_sampler(self, shuffle: bool) -> None:
+        """Streaming datasets handle sampling internally."""
+        return None
 
 
 def build_streaming_processed_dataloader(
@@ -362,16 +398,12 @@ def build_streaming_processed_dataloader(
     logger.info(f"Sum of stream samples: {sum(dataset.samples_per_stream)}")
     for i, (stream, n_samples) in enumerate(zip(dataset.streams, dataset.samples_per_stream)):
         location = stream.remote or stream.local
-        index = getattr(stream, 'index_file', 'index.json')
+        index = getattr(stream, 'index_file', INDEX_FILE)
         logger.info(f"  Stream {i}: {location}/{index} - {n_samples} samples")
     logger.info("-" * 23)
 
-    # Build dataloader
-    return DataLoader(
-        dataset=dataset,
+    return dataset.get_dataloader(
         batch_size=batch_size,
-        sampler=None,
         drop_last=drop_last,
-        collate_fn=lambda batch: default_collate([x for x in batch if x is not None]),
         **dataloader_kwargs,
     )
