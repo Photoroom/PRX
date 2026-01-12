@@ -2,7 +2,8 @@ import io
 import logging
 import random
 import string
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from collections.abc import Sequence
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Union, cast
 
 import numpy as np
 import torch
@@ -20,21 +21,41 @@ from .constants import BatchKeys
 logger = logging.getLogger(__name__)
 
 # Constants
-EMPTY_SAMPLING_WEIGHT = 1e-9
+EMPTY_SAMPLING_WEIGHT = 1e-9  # Near-zero weight for empty captions to avoid crashing on samples with only empty captions
 DEFAULT_DATA_AUG_TARGETS = ["image"]
+DEFAULT_VAE_SPATIAL_SCALE_FACTOR = 8
 
 
 # ============================================================================
 # Caption Handling
 # ============================================================================
 
-def parse_caption_keys(caption_keys: Union[str, List[str], List[Tuple[str, float]]]) -> List[Tuple[str, float]]:
-    """Parse caption keys into standardized (key, weight) tuples."""
+CaptionKeys = Union[
+    str,
+    Sequence[str],
+    Sequence[tuple[str, float]],
+]
+
+
+class CaptionKeyAndWeight(NamedTuple):
+    key: str
+    weight: float
+
+
+def parse_caption_keys(caption_keys: CaptionKeys) -> list[CaptionKeyAndWeight]:
+    """Parse caption keys into standardized CaptionKeyAndWeight tuples."""
     if isinstance(caption_keys, str):
-        return [(caption_keys, 1.0)]
+        return [CaptionKeyAndWeight(caption_keys, 1.0)]
+
+    if not caption_keys:
+        return []
+
     if isinstance(caption_keys[0], str):
-        return [(key, 1.0) for key in caption_keys]  # type: ignore
-    return caption_keys  # type: ignore
+        keys = cast(Sequence[str], caption_keys)
+        return [CaptionKeyAndWeight(k, 1.0) for k in keys]
+
+    keys = cast(Sequence[tuple[str, float]], caption_keys)
+    return [CaptionKeyAndWeight(k, float(w)) for k, w in keys]
 
 
 class CaptionSelector:
@@ -42,7 +63,7 @@ class CaptionSelector:
 
     def __init__(
         self,
-        caption_keys_and_weights: List[Tuple[str, float]],
+        caption_keys_and_weights: list[CaptionKeyAndWeight],
         has_text_latents: bool,
         has_mask_text_latents: bool,
         text_tower_name: str,
@@ -52,13 +73,13 @@ class CaptionSelector:
         self.has_mask_text_latents = has_mask_text_latents
         self.text_tower_name = text_tower_name
 
-    def get_valid_captions(self, sample: Dict[str, Any]) -> List[Tuple[str, float]]:
-        """Return list of valid (caption_key, weight) tuples for this sample."""
+    def get_valid_captions(self, sample: Dict[str, Any]) -> list[CaptionKeyAndWeight]:
+        """Return list of valid CaptionKeyAndWeight tuples for this sample."""
         if self.has_text_latents:
             return self._get_valid_latent_captions(sample)
         return self._get_valid_text_captions(sample)
 
-    def _get_valid_latent_captions(self, sample: Dict[str, Any]) -> List[Tuple[str, float]]:
+    def _get_valid_latent_captions(self, sample: Dict[str, Any]) -> list[CaptionKeyAndWeight]:
         """Get valid captions with precomputed latents."""
         valid = []
         for key, weight in self.caption_keys_and_weights:
@@ -79,11 +100,11 @@ class CaptionSelector:
                 is_empty = is_empty or len(sample[mask_key]) <= 1
 
             final_weight = EMPTY_SAMPLING_WEIGHT if is_empty else weight
-            valid.append((key, final_weight))
+            valid.append(CaptionKeyAndWeight(key, final_weight))
 
         return valid
 
-    def _get_valid_text_captions(self, sample: Dict[str, Any]) -> List[Tuple[str, float]]:
+    def _get_valid_text_captions(self, sample: Dict[str, Any]) -> list[CaptionKeyAndWeight]:
         """Get valid text captions (no latents)."""
         valid = []
         for key, weight in self.caption_keys_and_weights:
@@ -93,7 +114,7 @@ class CaptionSelector:
             # Downweight empty captions
             is_empty = len(sample[key]) == 0
             final_weight = EMPTY_SAMPLING_WEIGHT if is_empty else weight
-            valid.append((key, final_weight))
+            valid.append(CaptionKeyAndWeight(key, final_weight))
 
         return valid
 
@@ -223,12 +244,6 @@ class SampleProcessor:
 
         # Apply each transform
         for transform in self.transforms:
-            # Check condition if transform is condition-aware
-            if hasattr(transform, 'check_condition'):
-                if not transform.check_condition(sample):
-                    continue
-
-            # Wrap as tv_tensors and apply
             images = {k: tv_tensors.Image(v) for k, v in images.items()}
             images = transform(images)
 
@@ -246,17 +261,17 @@ class SampleProcessor:
         # Try to use precomputed latent if available
         if "img_latent" in sample:
             moments = torch.tensor(sample["img_latent"], dtype=torch.float32)
-            output[BatchKeys.image_latent] = sample_latent(moments)
+            output[BatchKeys.IMAGE_LATENT] = sample_latent(moments)
             return
 
         # Otherwise use image
         if "image" in sample:
-            output[BatchKeys.image] = image_to_tensor(sample["image"])
+            output[BatchKeys.IMAGE] = image_to_tensor(sample["image"])
 
     def _add_text_data(self, sample: Dict[str, Any], caption_key: str, output: Dict[BatchKeys, Any]) -> None:
         """Add text prompt and embeddings to output."""
-        output[BatchKeys.caption_key] = caption_key
-        output[BatchKeys.prompt] = sample[caption_key]
+        output[BatchKeys.CAPTION_KEY] = caption_key
+        output[BatchKeys.PROMPT] = sample[caption_key]
 
         if not self.has_text_latents:
             return
@@ -266,7 +281,7 @@ class SampleProcessor:
         latent = sample[latent_key]
         if isinstance(latent, np.ndarray):
             latent = torch.tensor(latent, dtype=torch.float32)
-        output[BatchKeys.prompt_embedding] = latent
+        output[BatchKeys.PROMPT_EMBEDDING] = latent
 
         if not self.has_mask_text_latents:
             # Verify shape matches expected length
@@ -283,7 +298,7 @@ class SampleProcessor:
         mask = torch.tensor(sample[mask_key], dtype=torch.bool)
         if mask.ndim == 2:
             mask = mask.squeeze(0)
-        output[BatchKeys.prompt_embedding_mask] = mask
+        output[BatchKeys.PROMPT_EMBEDDING_MASK] = mask
 
         # Pad embedding if needed
         if mask.shape[0] != latent.shape[0]:
@@ -293,16 +308,16 @@ class SampleProcessor:
                 )
             padding_len = mask.shape[0] - latent.shape[0]
             padding = torch.zeros((padding_len, latent.shape[1]), dtype=torch.float32)
-            output[BatchKeys.prompt_embedding] = torch.cat([latent, padding], dim=0)
+            output[BatchKeys.PROMPT_EMBEDDING] = torch.cat([latent, padding], dim=0)
 
     def _add_metadata(self, sample: Dict[str, Any], output: Dict[BatchKeys, Any]) -> None:
         """Add resolution metadata."""
         # Get image size
-        if BatchKeys.image in output:
-            h, w = output[BatchKeys.image].shape[-2:]
-        elif BatchKeys.image_latent in output:
-            h, w = output[BatchKeys.image_latent].shape[-2:]
-            h, w = h * 8, w * 8
+        if BatchKeys.IMAGE in output:
+            h, w = output[BatchKeys.IMAGE].shape[-2:]
+        elif BatchKeys.IMAGE_LATENT in output:
+            h, w = output[BatchKeys.IMAGE_LATENT].shape[-2:]
+            h, w = h * DEFAULT_VAE_SPATIAL_SCALE_FACTOR, w * DEFAULT_VAE_SPATIAL_SCALE_FACTOR
         else:
             raise ValueError("No image or latent found")
 
@@ -311,7 +326,7 @@ class SampleProcessor:
             h = min(h, sample["original_height"])
             w = min(w, sample["original_width"])
 
-        output[BatchKeys.resolution] = torch.tensor([h, w])
+        output[BatchKeys.RESOLUTION] = torch.tensor([h, w])
 
 
 class ProcessedDataset:
@@ -319,7 +334,7 @@ class ProcessedDataset:
 
     def __init__(
         self,
-        caption_keys: Union[str, List[str], List[Tuple[str, float]]] = "caption",
+        caption_keys: CaptionKeys = "caption",
         text_tower: str = "t5gemma2b-256-bf16",
         has_text_latents: bool = True,
         has_mask_text_latents: bool = True,
@@ -337,15 +352,13 @@ class ProcessedDataset:
         if isinstance(transforms_targets, str):
             transforms_targets = [transforms_targets]
 
-        self.caption_selector = CaptionSelector(
-            caption_keys_and_weights=caption_keys_and_weights,
-            has_text_latents=has_text_latents,
-            has_mask_text_latents=has_mask_text_latents,
-            text_tower_name=text_tower,
-        )
-
         self.processor = SampleProcessor(
-            caption_selector=self.caption_selector,
+            caption_selector=CaptionSelector(
+                caption_keys_and_weights=caption_keys_and_weights,
+                has_text_latents=has_text_latents,
+                has_mask_text_latents=has_mask_text_latents,
+                text_tower_name=text_tower,
+            ),
             text_tower_name=text_tower,
             has_text_latents=has_text_latents,
             has_mask_text_latents=has_mask_text_latents,
@@ -368,10 +381,10 @@ class ProcessedDataset:
         raise NotImplementedError
 
 # ============================================================================
-# Synthetic Dataset
+# Dummy Dataset
 # ============================================================================
 
-def build_synthetic_dataloader(
+def build_dummy_dataloader(
     batch_size: int,
     image_size: tuple[int, int] = (256, 256),
     text_tower: str = "t5gemma2b-256-bf16",
@@ -382,10 +395,10 @@ def build_synthetic_dataloader(
     num_workers: int = 32,
     **_kwargs: Any,
 ) -> DataLoader:
-    """Build a synthetic dataloader for testing."""
+    """Build a dummy dataloader for testing."""
 
-    class SyntheticDataset(torch.utils.data.Dataset):
-        """Synthetic dataset for testing."""
+    class DummyDataset(torch.utils.data.Dataset):
+        """Dummy dataset for testing."""
 
         def __init__(self, num_samples: int, image_size: tuple[int, int], text_tower: str,
                      has_text_latents: bool, has_mask_text_latents: bool):
@@ -409,18 +422,18 @@ def build_synthetic_dataloader(
 
         def __getitem__(self, idx: int) -> Dict[BatchKeys, Any]:
             sample = {
-                BatchKeys.image: torch.rand(3, *self.image_size),
-                BatchKeys.prompt: "".join(random.choices(string.ascii_lowercase + " ", k=32)),
+                BatchKeys.IMAGE: torch.rand(3, *self.image_size),
+                BatchKeys.PROMPT: "".join(random.choices(string.ascii_lowercase + " ", k=32)),
             }
 
             if self.has_text_latents:
-                sample[BatchKeys.prompt_embedding] = torch.randn(self.seq_len, self.hidden_dim)
+                sample[BatchKeys.PROMPT_EMBEDDING] = torch.randn(self.seq_len, self.hidden_dim)
                 if self.has_mask_text_latents:
-                    sample[BatchKeys.prompt_embedding_mask] = torch.ones(self.seq_len, dtype=torch.bool)
+                    sample[BatchKeys.PROMPT_EMBEDDING_MASK] = torch.ones(self.seq_len, dtype=torch.bool)
 
             return sample
 
-    dataset = SyntheticDataset(
+    dataset = DummyDataset(
         num_samples=num_samples,
         image_size=image_size,
         text_tower=text_tower,

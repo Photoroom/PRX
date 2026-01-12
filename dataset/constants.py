@@ -1,28 +1,28 @@
-from enum import Enum
+from enum import StrEnum, auto
 
 
-class BatchKeys(str, Enum):
+class BatchKeys(StrEnum):
     """Keys used for batch data in txt2img dataset."""
     # Core image keys
-    image = "image"
-    image_latent = "image_latent"
+    IMAGE = auto()
+    IMAGE_LATENT = auto()
 
     # Text/prompt keys
-    prompt = "prompt"
-    negative_prompt = "negative_prompt"
-    prompt_embedding = "prompt_embedding"
-    prompt_embedding_mask = "prompt_embedding_mask"
+    PROMPT = auto()
+    NEGATIVE_PROMPT = auto()
+    PROMPT_EMBEDDING = auto()
+    PROMPT_EMBEDDING_MASK = auto()
 
     # Image metadata
-    original_height = "original_height"
-    original_width = "original_width"
-    resolution = "resolution"
+    ORIGINAL_HEIGHT = auto()
+    ORIGINAL_WIDTH = auto()
+    RESOLUTION = auto()
 
     # Task and logging
-    caption_key = "caption_key"
+    CAPTION_KEY = auto()
 
     # Noise for generation
-    noise = "noise"
-    
+    NOISE = auto()
+
     # Repa keys
-    target_representation = "target_representation"
+    TARGET_REPRESENTATION = auto()
