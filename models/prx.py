@@ -113,10 +113,43 @@ def seq2img(seq: Tensor, patch_size: int, shape: Tensor) -> Tensor:
 
 class PRX(nn.Module):
     """
-    PRX
+    PRX diffusion transformer model.
+
+    A transformer-based architecture for image generation that operates on patchified
+    latent representations. The model processes image latents through a series of
+    transformer blocks with common attention mechanism where image tokens attend both to image and text tokens.
+
+    Args:
+        params: Model configuration, either as PRXParams dataclass, dict, or DictConfig.
+            See PRXParams for available configuration options.
+        **kwargs: Alternative way to pass parameters when loading from storage.
+
+    Attributes:
+        params: The PRXParams configuration object.
+        in_channels: Number of input latent channels.
+        patch_size: Size of patches for patchifying the latent.
+        out_channels: Output channels (in_channels * patch_size^2).
+        hidden_size: Transformer hidden dimension.
+        num_heads: Number of attention heads.
     """
 
     transformer_block_class = PRXBlock
+
+    def _init_params(self, params: PRXParams) -> None:
+        """
+        Store model configuration and forward key parameters to instance attributes.
+
+        This helper keeps __init__ focused on module construction by extracting
+        the parameter assignment logic.
+        """
+        self.params = params
+        self.in_channels = params.in_channels
+        self.patch_size = params.patch_size
+        self.out_channels = self.in_channels * self.patch_size**2
+        self.time_factor = params.time_factor
+        self.time_max_period = params.time_max_period
+        self.hidden_size = params.hidden_size
+        self.num_heads = params.num_heads
 
     def __init__(self, params: PRXParams | Dict[str, Any] | None = None, **kwargs: Any):
         super().__init__()
@@ -134,15 +167,7 @@ class PRX(nn.Module):
         elif not isinstance(params, PRXParams):
             raise TypeError(f"params must be PRXParams, dict, or DictConfig, got {type(params)}")
 
-        self.params = params
-        # self.max_img_seq_len = params.max_img_seq_len
-        self.in_channels = params.in_channels
-        self.patch_size = params.patch_size
-
-        self.out_channels = self.in_channels * self.patch_size**2
-
-        self.time_factor = params.time_factor
-        self.time_max_period = params.time_max_period
+        self._init_params(params)
 
         if params.hidden_size % params.num_heads != 0:
             raise ValueError(f"Hidden size {params.hidden_size} must be divisible by num_heads {params.num_heads}")
@@ -151,9 +176,6 @@ class PRX(nn.Module):
 
         if sum(params.axes_dim) != pe_dim:
             raise ValueError(f"Got {params.axes_dim} but expected positional dim {pe_dim}")
-
-        self.hidden_size = params.hidden_size
-        self.num_heads = params.num_heads
         self.pe_embedder = EmbedND(  # spellchecker:disable-line
             dim=pe_dim, theta=params.theta, axes_dim=params.axes_dim
         )
@@ -251,6 +273,7 @@ class PRX(nn.Module):
 if __name__ == "__main__":
     DEVICE = torch.device("cpu")
     DTYPE = torch.bfloat16
+    TORCH_COMPILE = False
 
     BS = 2
     LATENT_C = 16
@@ -264,7 +287,8 @@ if __name__ == "__main__":
     print(f"Total number of parameters : {total_params / 1e9: .3f}B")
     denoiser = denoiser.to(DEVICE, DTYPE)
 
-    # denoiser = torch.compile(denoiser)
+    if TORCH_COMPILE:
+        denoiser = torch.compile(denoiser)
 
     out = denoiser(
         image_latent=torch.randn(BS, LATENT_C, FEATURE_H, FEATURE_W, device=DEVICE, dtype=DTYPE),

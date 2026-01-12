@@ -198,7 +198,7 @@ class PRXBlock(nn.Module):
         img_q, img_k, img_v = rearrange(img_qkv, "B L (K H D) -> K B H L D", K=3, H=self.num_heads)
         img_q, img_k = self.qk_norm(img_q, img_k, img_v)
 
-        # txt tokens proj and norm - no normalisation nor modulate as in nextgen
+        # txt tokens proj and norm
         txt_kv = self.txt_kv_proj(txt)
         txt_k, txt_v = rearrange(txt_kv, "B L (K H D) -> K B H L D", K=2, H=self.num_heads)
         txt_k = self.k_norm(txt_k)
