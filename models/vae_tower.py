@@ -35,7 +35,20 @@ VaeTowerPresets: Dict[str, Dict[str, Any]] = {
 
 
 class IdentityVAE(nn.Module):
-    """Identity VAE that passes inputs through unchanged (for pixel-space diffusion)."""
+    """Identity VAE that passes inputs through unchanged (for pixel-space diffusion).
+
+    Args:
+        channels: Number of input/output channels. Defaults to 3.
+        torch_dtype: Data type for the device tracker buffer. Defaults to torch.float32.
+
+    Attributes:
+        scale_factor: Spatial scale factor (always 1 for identity).
+        spatial_compression_ratio: Spatial compression ratio (always 1 for identity).
+        config: Configuration object with scaling_factor, shift_factor, and latent_channels.
+        encoder: Identity encoder module (passes inputs unchanged).
+        decoder: Identity decoder module (passes inputs unchanged).
+        _device_tracker: Buffer tensor used for device/dtype detection.
+    """
 
     def __init__(self, channels: int = 3, torch_dtype: torch.dtype = torch.float32) -> None:
         super().__init__()
