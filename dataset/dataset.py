@@ -1,4 +1,3 @@
-import io
 import logging
 import random
 import string
@@ -10,13 +9,12 @@ import torch
 from composer.utils import dist
 from torch.utils.data import DataLoader, default_collate
 from torchvision import tv_tensors
-import torchvision.transforms.functional as TF
 from diffusers.utils.torch_utils import randn_tensor
-from PIL import Image
 
 from models.text_tower import TextTowerPresets
 
 from .constants import BatchKeys
+from .transforms import image_to_tensor
 
 logger = logging.getLogger(__name__)
 
@@ -147,32 +145,6 @@ def sample_latent(moments: torch.Tensor) -> torch.Tensor:
         sample = randn_tensor(mean.shape, generator=None, device=moments.device, dtype=moments.dtype)
         x = mean + std * sample
     return x.contiguous()
-
-
-def image_to_tensor(image: Union[bytes, Image.Image, np.ndarray, torch.Tensor]) -> torch.Tensor:
-    """Convert various image formats to torch tensor.
-
-    Args:
-        image: Image as bytes, PIL Image, numpy array, or torch tensor
-
-    Returns:
-        Torch tensor in [0, 1] range with shape (C, H, W)
-    """
-    if isinstance(image, bytes):
-        image = Image.open(io.BytesIO(image))
-
-    if isinstance(image, Image.Image):
-        image = TF.pil_to_tensor(image).to(torch.float32).div(255.0)
-    elif isinstance(image, np.ndarray):
-        image = torch.tensor(image, dtype=torch.float32).div(255.0)
-        if image.dim() == 3:
-            image = image.permute(2, 0, 1).contiguous()
-        else:
-            image = image.unsqueeze(0)
-
-    # Clamp to overcome possible issues due to numerical errors in previous resizing steps
-    image = torch.clamp(image, 0.0, 1.0)
-    return image
 
 
 class SampleProcessor:
