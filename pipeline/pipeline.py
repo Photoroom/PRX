@@ -1,6 +1,6 @@
 import copy
-from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from enum import StrEnum, auto
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, TypedDict
 
 import torch
 import torch.nn.functional as F
@@ -13,23 +13,36 @@ from schedulers.scheduler import BaseScheduler
 from models.text_tower import TextTower
 
 
-class ModelInputs(str, Enum):
+class ModelInputs(StrEnum):
     """Model input parameter names for the denoiser.
 
     This enum provides a model-agnostic interface for passing arguments
     to the denoiser, mapping from generic keys to specific parameter names.
     """
-    image = "image"
-    prompt = "prompt"
-    prompt_embedding = "cross_attn_conditioning"
-    prompt_mask = "cross_attn_mask"
-    image_latents = "image_latent"
+    IMAGE = auto()
+    PROMPT = auto()
+    PROMPT_EMBEDS = auto()
+    PROMPT_ATTENTION_MASK = auto()
+    IMAGE_LATENT = auto()
 
 
-class PredictionType(str, Enum):
+class PredictionType(StrEnum):
     """Noise scheduler prediction types for diffusion models."""
-    FLOW_MATCHING = "flow_matching"
-    X_PREDICTION_FLOW_MATCHING = "x_prediction_flow_matching"
+    FLOW_MATCHING = auto()
+    X_PREDICTION_FLOW_MATCHING = auto()
+
+
+class ImageSize(NamedTuple):
+    height: int
+    width: int
+
+
+class ForwardOutput(TypedDict, total=False):
+    """Output from forward/eval_forward pass."""
+    prediction: torch.Tensor
+    target: torch.Tensor
+    timesteps: torch.Tensor
+    generated_images: Dict[float, torch.Tensor]  # Only present in eval_forward
 
 
 
@@ -72,8 +85,25 @@ class EMAModel(torch.nn.Module):
 
 class LatentDiffusion(ComposerModel):
     """Latent Diffusion pipeline for training and inference.
+
     Extends ComposerModel for integration with the Composer training framework.
+
+    Args:
+        denoiser: The denoising model (e.g., UNet, DiT).
+        vae: Variational autoencoder for encoding/decoding images to/from latent space.
+        text_tower: Text encoder for processing prompts into embeddings.
+        noise_scheduler: Scheduler for adding noise during training.
+        inference_noise_scheduler: Scheduler for denoising during inference.
+        p_drop_caption: Probability of dropping text conditioning for classifier-free guidance training.
+        train_metrics: List of metrics to track during training.
+        val_metrics: List of metrics to track during validation.
+        val_seed: Random seed for reproducible validation sampling.
+        val_guidance_scales: List of guidance scales to use during validation generation.
+        loss_bins: Timestep bins for computing per-bin losses, as (start, end) tuples.
+        negative_prompt: Default negative prompt for classifier-free guidance.
     """
+
+    _NULL_PROMPT_EMBEDDING_ATTR = "null_prompt_embedding"
 
     def __init__(
         self,
@@ -99,7 +129,8 @@ class LatentDiffusion(ComposerModel):
         self.noise_scheduler: BaseScheduler = noise_scheduler
         self.inference_scheduler: BaseScheduler = inference_noise_scheduler
 
-        assert 0.0 <= p_drop_caption <= 1.0
+        if not 0.0 <= p_drop_caption <= 1.0:
+            raise ValueError(f"p_drop_caption must be between 0.0 and 1.0, got {p_drop_caption}")
         self.p_drop_caption = p_drop_caption
 
         self.sampled_timesteps = torch.tensor([])
@@ -140,7 +171,7 @@ class LatentDiffusion(ComposerModel):
     # BATCH PROCESSING (Training & Inference Shared)
     # ============================================================
 
-    def process_batch(self, batch: Dict[BatchKeys, Any]) -> Dict[ModelInputs, Any]:
+    def prepare_batch(self, batch: Dict[BatchKeys, Any]) -> Dict[ModelInputs, Any]:
         """
         Return the right model arguments for the model from the batch.
         Classifier free guidance is not done here.
@@ -165,7 +196,7 @@ class LatentDiffusion(ComposerModel):
                 "Batch must contain either 'image_latent' or 'image' key."
             )
 
-        return {ModelInputs.image_latents: image_latent}
+        return {ModelInputs.IMAGE_LATENT: image_latent}
 
     def encode_single_text(self, text: str, device: torch.device) -> Dict[str, Any]:
         """Encode a single text string to embeddings.
@@ -197,9 +228,9 @@ class LatentDiffusion(ComposerModel):
                 "Batch must contain either 'prompt_embedding' or 'prompt' key."
             )
 
-        output = {ModelInputs.prompt_embedding: text_embedding.to(self.denoiser_dtype)}
+        output = {ModelInputs.PROMPT_EMBEDS: text_embedding.to(self.denoiser_dtype)}
         if text_mask is not None:
-            output[ModelInputs.prompt_mask] = text_mask
+            output[ModelInputs.PROMPT_ATTENTION_MASK] = text_mask
         return output
 
     # ============================================================
@@ -216,25 +247,25 @@ class LatentDiffusion(ComposerModel):
           - prompt : use the negative prompt or ""
         """
         do_not_duplicate_key = [
-            ModelInputs.image_latents,  # The generate method takes care of this
-            ModelInputs.prompt_embedding,  # set negative prompts
-            ModelInputs.prompt_mask,  #  goes with negative prompt
+            ModelInputs.IMAGE_LATENT,  # The generate method takes care of this
+            ModelInputs.PROMPT_EMBEDS,  # set negative prompts
+            ModelInputs.PROMPT_ATTENTION_MASK,  #  goes with negative prompt
         ]
 
         denoiser_kwargs.update(
             {k: torch.concat([v] * 2, dim=0) for k, v in denoiser_kwargs.items() if k not in do_not_duplicate_key}
         )
         # Negative Prompts
-        batch_size = len(denoiser_kwargs[ModelInputs.prompt_embedding])
+        batch_size = len(denoiser_kwargs[ModelInputs.PROMPT_EMBEDS])
         negative_prompt = batch.get(BatchKeys.negative_prompt, [self.negative_prompt] * batch_size)
-        device = denoiser_kwargs[ModelInputs.image_latents].device
+        device = denoiser_kwargs[ModelInputs.IMAGE_LATENT].device
         uncond_text_tower_output = self.encode_texts(negative_prompt, device=device)
-        denoiser_kwargs[ModelInputs.prompt_embedding] = torch.concat(
-            [uncond_text_tower_output["text_embed"], denoiser_kwargs[ModelInputs.prompt_embedding]], dim=0
+        denoiser_kwargs[ModelInputs.PROMPT_EMBEDS] = torch.concat(
+            [uncond_text_tower_output["text_embed"], denoiser_kwargs[ModelInputs.PROMPT_EMBEDS]], dim=0
         )
-        if ModelInputs.prompt_mask in denoiser_kwargs:
-            denoiser_kwargs[ModelInputs.prompt_mask] = torch.concat(
-                [uncond_text_tower_output["attention_mask"], denoiser_kwargs[ModelInputs.prompt_mask]], dim=0
+        if ModelInputs.PROMPT_ATTENTION_MASK in denoiser_kwargs:
+            denoiser_kwargs[ModelInputs.PROMPT_ATTENTION_MASK] = torch.concat(
+                [uncond_text_tower_output["attention_mask"], denoiser_kwargs[ModelInputs.PROMPT_ATTENTION_MASK]], dim=0
             )
 
         return denoiser_kwargs
@@ -243,7 +274,7 @@ class LatentDiffusion(ComposerModel):
         self, batch: Dict[BatchKeys, Any], do_cfg: bool = False
     ) -> Dict[ModelInputs, Any]:
         """Build the denoiser argument from the batch. Shared method for inference and training."""
-        denoiser_kwargs = self.process_batch(batch)
+        denoiser_kwargs = self.prepare_batch(batch)
 
         if self.training:
             denoiser_kwargs = self.random_drop_conditionings(denoiser_kwargs)
@@ -292,9 +323,9 @@ class LatentDiffusion(ComposerModel):
             compile_model(self.vae.vae.encoder, dynamic=True)
 
 
-    def forward(self, batch: Dict[BatchKeys, Any], use_ema: bool = False) -> Dict[str, torch.Tensor]:
+    def forward(self, batch: Dict[BatchKeys, Any], use_ema: bool = False) -> ForwardOutput:
         denoiser_kwargs = self.get_denoiser_kwargs(batch)
-        latents = denoiser_kwargs.pop(ModelInputs.image_latents)
+        latents = denoiser_kwargs.pop(ModelInputs.IMAGE_LATENT)
         # Sample the diffusion timesteps
         self.sampled_timesteps = self.sample_timesteps(latents.shape[0], latents.device)
         # Add noise to the inputs (forward diffusion)
@@ -315,7 +346,6 @@ class LatentDiffusion(ComposerModel):
         return {
             "prediction": prediction.contiguous(),
             "target": target,
-            "noised_latents": noised_latents,
             "timesteps": self.sampled_timesteps,
         }
     # from "Back to Basics: Let Denoising Generative Models Denoise"
@@ -339,15 +369,15 @@ class LatentDiffusion(ComposerModel):
         Drop the text conditioning with probability `p_drop_caption` for each sample in the batch.
         Inplace operation.
         """
-        conditioning = model_inputs[ModelInputs.prompt_embedding]
-        if not hasattr(self, "null_prompt_embedding"):
+        conditioning = model_inputs[ModelInputs.PROMPT_EMBEDS]
+        if not hasattr(self, self._NULL_PROMPT_EMBEDDING_ATTR):
             self.init_null_text_conditioning(conditioning.device)
 
         drop_mask = torch.rand(conditioning.shape[0], device=conditioning.device) < self.p_drop_caption
 
-        model_inputs[ModelInputs.prompt_embedding][drop_mask] = self.null_prompt_embedding.to(conditioning.dtype)
-        if ModelInputs.prompt_mask in model_inputs:
-            model_inputs[ModelInputs.prompt_mask][drop_mask] = self.null_prompt_mask
+        model_inputs[ModelInputs.PROMPT_EMBEDS][drop_mask] = self.null_prompt_embedding.to(conditioning.dtype)
+        if ModelInputs.PROMPT_ATTENTION_MASK in model_inputs:
+            model_inputs[ModelInputs.PROMPT_ATTENTION_MASK][drop_mask] = self.null_prompt_mask
 
     def get_target(self, latents: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         if self.noise_scheduler.config.prediction_type == PredictionType.X_PREDICTION_FLOW_MATCHING:
@@ -393,32 +423,35 @@ class LatentDiffusion(ComposerModel):
     # UTILITIES
     # ============================================================
 
-    def get_image_size_from_batch(self, batch: Dict[BatchKeys, Any]) -> Tuple[int, int]:
-        """Return tuple: image (height, width)"""
+    def get_image_size_from_batch(self, batch: Dict[BatchKeys, Any]) -> ImageSize:
+        """Return ImageSize (height, width) from a batch."""
         if BatchKeys.image in batch:
             shape = batch[BatchKeys.image].shape[-2:]
-            return (int(shape[0]), int(shape[1]))
+            return ImageSize(height=int(shape[0]), width=int(shape[1]))
         else:
             h, w = batch[BatchKeys.image_latent].shape[-2:]
-            return (int(h * self.vae_scale_factor), int(w * self.vae_scale_factor))
+            return ImageSize(height=int(h * self.vae_scale_factor), width=int(w * self.vae_scale_factor))
 
-    def get_image_latent_size_from_batch(self, batch: Dict[BatchKeys, Any]) -> Tuple[int, int]:
-        """Return tuple: image latent (height, width)"""
+    def get_image_latent_size_from_batch(self, batch: Dict[BatchKeys, Any]) -> ImageSize:
+        """Return ImageSize (height, width) of image latents from a batch."""
         if BatchKeys.image_latent in batch:
-            return tuple(batch[BatchKeys.image_latent].shape[-2:])
+            shape = batch[BatchKeys.image_latent].shape[-2:]
+            return ImageSize(height=int(shape[0]), width=int(shape[1]))
         else:
             h, w = batch[BatchKeys.image].shape[-2:]
-            return (h // self.vae_scale_factor, w // self.vae_scale_factor)
+            return ImageSize(height=h // self.vae_scale_factor, width=w // self.vae_scale_factor)
 
     def get_batch_size_from_batch(self, batch: Dict[BatchKeys, Any]) -> int:
-        """Return int : look for the first element in the batch and returns it length."""
-        return len(next(iter(batch.values())))
+        """Return the batch size from a batch dict."""
+        if BatchKeys.image_latent in batch:
+            return len(batch[BatchKeys.image_latent])
+        return len(batch[BatchKeys.image])
 
     # ============================================================
     # EVALUATION & METRICS
     # ============================================================
 
-    def eval_forward(self, batch: Dict[BatchKeys, Any], outputs: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    def eval_forward(self, batch: Dict[BatchKeys, Any], outputs: ForwardOutput | None = None) -> ForwardOutput:
         """For stable diffusion, eval forward computes denoiser outputs as well as some samples."""
         # Skip this if outputs have already been computed, e.g. during training
         if outputs is not None:
@@ -447,21 +480,8 @@ class LatentDiffusion(ComposerModel):
 
     def get_metrics(self, is_train: bool = False) -> Dict[str, Metric]:
         if is_train:
-            metrics = self.train_metrics
-        else:
-            metrics = self.val_metrics  # type: ignore
-
-        if isinstance(metrics, Metric):
-            metrics_dict = {metrics.__class__.__name__: metrics}
-        elif isinstance(metrics, list):
-            metrics_dict = {metric.__class__.__name__: metric for metric in metrics}
-        else:
-            metrics_dict = {}  # type: ignore [unreachable]
-            for name, metric in metrics.items():
-                assert isinstance(metric, Metric)
-                metrics_dict[name] = metric
-
-        return metrics_dict
+            return {metric.__class__.__name__: metric for metric in self.train_metrics}
+        return self.val_metrics
 
     def update_metric(self, batch: Dict[BatchKeys, Any], outputs: Dict[str, Any], metric: Metric) -> None:
         """Update MSE metric - either for a specific timestep bin or for all timesteps."""
@@ -599,7 +619,7 @@ class LatentDiffusion(ComposerModel):
         if BatchKeys.image_latent not in batch:
             batch[BatchKeys.image_latent] = latents
         denoiser_kwargs = self.get_denoiser_kwargs(batch=batch, do_cfg=do_cfg)
-        denoiser_kwargs.pop(ModelInputs.image_latents)  # Will be updated per step
+        denoiser_kwargs.pop(ModelInputs.IMAGE_LATENT)  # Will be updated per step
 
         # 4. Setup timesteps
         if hasattr(denoiser, "set_timesteps"):
@@ -630,50 +650,3 @@ class LatentDiffusion(ComposerModel):
         # 6. Decode if requested
         return self.latent_to_image(latents).detach() if decode_latents else latents
 
-if __name__ == "__main__":
-    from models_factory import build_pipeline
-    from omegaconf import OmegaConf
-    import cv2
-    import numpy as np
-    import os
-
-    # Load component configs (relative to repo root)
-    config_dir = os.path.join(os.path.dirname(__file__), "..", "training", "yamls")
-    denoiser_config = OmegaConf.load(os.path.join(config_dir, "model", "prx_dcae_small.yaml"))
-    text_tower_config = OmegaConf.load(os.path.join(config_dir, "text_tower", "t5gemma2b_256_bf16.yaml"))
-    vae_config = OmegaConf.load(os.path.join(config_dir, "vae", "dc_ae_sana.yaml"))
-
-    pipeline = build_pipeline(
-        denoiser_config=OmegaConf.to_container(denoiser_config),
-        text_tower_config=OmegaConf.to_container(text_tower_config),
-        vae_config=OmegaConf.to_container(vae_config),
-        input_size=256,
-        prediction_type="flow_matching",
-        latent_channels=32,
-        timestep_shift=3.0,
-    ).eval()
-    
-    batch = {
-        BatchKeys.prompt: ["A photograph depicts a dimly lit table setting featuring a plush brown horse toy to the left, a burger and fries on a white plate in the center, and a glass of white wine to the right. The background includes warm-toned bokeh lights suggesting a festive atmosphere, possibly Christmas. The overall aesthetic is cozy and intimate, with a slightly melancholic vibe. The lighting is low-key, with warm light sources creating shadows and highlighting textures. The color palette is dominated by warm browns, oranges, and yellows, contrasted by the white plate and the pale yellow of the wine. The style is realistic and evocative, with a focus on capturing the mood and atmosphere. The image is composed using a shallow depth of field, drawing attention to the burger and the horse. No synthetic elements are apparent."],
-        BatchKeys.negative_prompt: ["blurry, ugly, low quality"],
-    }
-    
-    # ckpt_path = "/raid/shared/storage/home/davidb/diffusers_ok/old_and_checkpoints/computer_vision_checkpoints/denoiser_sft_dc_ae_weights.pth"
-    # state_dict = torch.load(ckpt_path, map_location="cuda")
-    # pipeline.denoiser.load_state_dict(state_dict, strict=False)
-    
-    with torch.autocast("cuda", dtype=torch.bfloat16):
-        for i in range(5):
-            with torch.inference_mode():
-                results = pipeline.generate(
-                    batch=batch,
-                    guidance_scale=4.0,
-                    num_inference_steps=40,
-                    seed=42 + i,
-                    image_size=[256, 256],
-                    progress_bar=True,
-                    
-                )
-                generated_image = (results[0].permute(1, 2, 0).float().detach().cpu().numpy() * 255).astype(np.uint8)
-                cv2.imwrite(f"generated_image_prx_{i}.png", cv2.cvtColor(generated_image, cv2.COLOR_RGB2BGR))
-                print("Saved generated image to 'generated_image.png'")
