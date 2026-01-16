@@ -1,0 +1,4 @@
+# DC-AE Sana VAE (32 channels, 32x compression)
+# Use with prx_dcae_small model
+model_name: mit-han-lab/dc-ae-f32c32-sana-1.1-diffusers
+torch_dtype: torch.float32

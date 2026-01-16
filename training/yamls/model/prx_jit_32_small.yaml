@@ -1,0 +1,7 @@
+# PRX Small Configuration (1.24B params)
+defaults:
+  - prx_small
+
+in_channels: 3
+patch_size: 32
+bottleneck_size: 256

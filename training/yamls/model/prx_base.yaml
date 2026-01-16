@@ -1,0 +1,14 @@
+# PRX Base Configuration (7.3B params)
+_model_class: PRX
+in_channels: 16
+patch_size: 2
+context_in_dim: 2304  # Will be auto-adjusted to match text_tower.hidden_size
+hidden_size: 3584
+mlp_ratio: 3.5
+num_heads: 28
+depth: 24
+axes_dim: [64, 64]
+theta: 10000
+time_factor: 1000.0
+time_max_period: 10000
+conditioning_block_ids: null

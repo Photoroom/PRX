@@ -1,0 +1,7 @@
+# PRX DCAE Small Configuration (1.24B params)
+# For use with DC-AE VAE (32 channels, 32x compression)
+defaults:
+  - prx_small
+
+in_channels: 32
+patch_size: 1

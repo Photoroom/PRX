@@ -1,0 +1,10 @@
+# T5-Gemma 2B Text Tower (256 max length, bf16)
+# Used for text encoding in diffusion models
+preset_name: t5gemma2b-256-bf16  # For dataset backward compatibility
+model_name: google/t5gemma-2b-2b-ul2
+model_max_length: 256
+use_attn_mask: true
+use_last_hidden_state: true
+only_tokenizer: false
+torch_dtype: torch.bfloat16
+unpadded: false

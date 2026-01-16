@@ -1,0 +1,9 @@
+# @package _global_
+
+# PRX JIT 32 pipeline configuration
+# PRX Small (1.24B) + T5-Gemma 2B + Identity VAE (no compression)
+
+defaults:
+  - prx_standard
+  - /model@diffusion_model: prx_jit_32_small
+  - /vae@diffusion_vae: identity

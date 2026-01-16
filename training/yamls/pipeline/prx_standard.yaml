@@ -1,0 +1,12 @@
+# @package _global_
+
+# Standard PRX pipeline configuration
+# PRX Small (1.24B) + T5-Gemma 2B + FLUX VAE (16 channels)
+
+defaults:
+  - /model@diffusion_model: prx_small
+  - /text_tower@diffusion_text_tower: t5gemma2b_256_bf16
+  - /vae@diffusion_vae: flux_dev
+
+# Pipeline-specific settings
+denoiser_dtype: torch.float

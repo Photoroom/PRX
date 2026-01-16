@@ -1,0 +1,4 @@
+# Identity VAE (passthrough, no encoding)
+# For testing and debugging
+model_name: identity
+torch_dtype: torch.bfloat16

@@ -1,0 +1,6 @@
+# PRX Flux2VAE Small Configuration (1.24B params)
+# For use with FLUX.2 VAE (32 channels, 8x compression)
+defaults:
+  - prx_small
+
+in_channels: 32

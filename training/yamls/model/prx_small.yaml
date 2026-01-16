@@ -1,0 +1,8 @@
+# PRX Small Configuration (1.24B params)
+# Most commonly used configuration for PRX models
+defaults:
+  - prx_base
+
+hidden_size: 1792
+depth: 16
+axes_dim: [32, 32]

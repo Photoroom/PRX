@@ -1,0 +1,9 @@
+# @package _global_
+
+# PRX Flux2VAE pipeline configuration
+# PRX Flux2VAE Small (1.24B) + T5-Gemma 2B + FLUX.2 VAE (32 channels)
+
+defaults:
+  - prx_standard
+  - /model@diffusion_model: prx_flux2
+  - /vae@diffusion_vae: flux2
