@@ -4,9 +4,6 @@
 # PRX DCAE Small (1.24B, 32 channels) + T5-Gemma 2B + DC-AE Sana VAE (32 channels)
 
 defaults:
+  - prx_standard
   - /model@diffusion_model: prx_dcae_small
-  - /text_tower@diffusion_text_tower: t5gemma2b_256_bf16
   - /vae@diffusion_vae: dc_ae_sana
-
-# Pipeline-specific settings
-denoiser_dtype: torch.float

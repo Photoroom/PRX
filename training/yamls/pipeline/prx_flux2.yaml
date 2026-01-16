@@ -1,12 +1,9 @@
 # @package _global_
 
-# PRX Air pipeline configuration
-# PRX Air Small (lighter than 1.24B) + T5-Gemma 2B + FLUX VAE (32 channels)
+# PRX Flux2VAE pipeline configuration
+# PRX Flux2VAE Small (1.24B) + T5-Gemma 2B + FLUX.2 VAE (32 channels)
 
 defaults:
-  - /model@diffusion_model: prx_jit_8_small
-  - /text_tower@diffusion_text_tower: t5gemma2b_256_bf16
+  - prx_standard
+  - /model@diffusion_model: prx_flux2
   - /vae@diffusion_vae: flux2
-
-# Pipeline-specific settings
-denoiser_dtype: torch.float

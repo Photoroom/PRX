@@ -1,16 +1,7 @@
 # PRX Small Configuration (1.24B params)
-# Most commonly used configuration for PRX models
-_model_class: PRX
+defaults:
+  - prx_small
+
 in_channels: 3
 patch_size: 32
-context_in_dim: 2304  # Will be auto-adjusted to match text_tower.hidden_size
-hidden_size: 1792
-mlp_ratio: 3.5
-num_heads: 28
-depth: 16
-axes_dim: [32, 32]
-theta: 10000
-time_factor: 1000.0
-time_max_period: 10000
-conditioning_block_ids: null
 bottleneck_size: 256
