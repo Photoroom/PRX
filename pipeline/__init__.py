@@ -8,6 +8,6 @@ __all__ = [
     "build_schedulers",
     "wrap_fsdp_module",
     "maybe_fsdp_unwrap",
-    "str_to_torch_dtype",
+    "resolve_torch_dtype",
 ]
 

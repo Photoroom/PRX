@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+import logging
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 
 import torch
 from composer.devices import DeviceGPU
@@ -11,6 +12,12 @@ from schedulers.scheduler import EulerDiscreteScheduler, SchedulerConfig
 
 from .pipeline import LatentDiffusion
 
+logger = logging.getLogger(__name__)
+
+
+class Schedulers(NamedTuple):
+    train: EulerDiscreteScheduler
+    inference: EulerDiscreteScheduler
 
 
 def wrap_fsdp_module(module: torch.nn.Module, value: bool) -> None:
@@ -21,12 +28,12 @@ def wrap_fsdp_module(module: torch.nn.Module, value: bool) -> None:
 
 
 
-def str_to_torch_dtype(dtype_str: Union[str, torch.dtype, None]) -> Optional[torch.dtype]:
-    if dtype_str is None:
+def resolve_torch_dtype(dtype: Union[str, torch.dtype, None]) -> Optional[torch.dtype]:
+    if dtype is None:
         return None
 
-    if isinstance(dtype_str, torch.dtype):
-        return dtype_str
+    if isinstance(dtype, torch.dtype):
+        return dtype
 
     dtype_map = {
         "torch.float": torch.float,
@@ -39,17 +46,17 @@ def str_to_torch_dtype(dtype_str: Union[str, torch.dtype, None]) -> Optional[tor
         "float16": torch.float16,
     }
 
-    if dtype_str in dtype_map:
-        return dtype_map[dtype_str]
+    if dtype in dtype_map:
+        return dtype_map[dtype]
 
-    raise ValueError(f"Unsupported dtype: {dtype_str}. Supported: {list(dtype_map.keys())}")
+    raise ValueError(f"Unsupported dtype: {dtype}. Supported: {list(dtype_map.keys())}")
 
 
 def build_schedulers(
     prediction_type: str = "flow_matching",
     timestep_shift: Optional[int] = None,
     num_train_timesteps: int = 1000,
-) -> Tuple[EulerDiscreteScheduler, EulerDiscreteScheduler]:
+) -> Schedulers:
     """Build training and inference noise schedulers.
 
     Args:
@@ -58,7 +65,7 @@ def build_schedulers(
         num_train_timesteps: Number of training timesteps (default: 1000)
 
     Returns:
-        Tuple of (noise_scheduler, inference_noise_scheduler)
+        Schedulers namedtuple with train and inference schedulers
     """
     config = SchedulerConfig(
         num_train_timesteps=num_train_timesteps,
@@ -66,16 +73,10 @@ def build_schedulers(
     )
 
     shift = float(timestep_shift) if timestep_shift is not None else 1.0
-    noise_scheduler = EulerDiscreteScheduler(
-        config=config,
-        shift=shift,
+    return Schedulers(
+        train=EulerDiscreteScheduler(config=config, shift=shift),
+        inference=EulerDiscreteScheduler(config=config, shift=shift),
     )
-    inference_noise_scheduler = EulerDiscreteScheduler(
-        config=config,
-        shift=shift,
-    )
-
-    return noise_scheduler, inference_noise_scheduler
 
 
 def _get_device() -> torch.device:
@@ -138,17 +139,17 @@ def build_pipeline(
     """
     device = _get_device()
 
-    print(f" > Building diffusion pipeline V2 - device {device}")
+    logger.info("Building diffusion pipeline V2 - device %s", device)
 
     text_tower_cfg = text_tower_config.copy()
     if 'torch_dtype' in text_tower_cfg:
-        text_tower_cfg['torch_dtype'] = str_to_torch_dtype(text_tower_cfg['torch_dtype'])
+        text_tower_cfg['torch_dtype'] = resolve_torch_dtype(text_tower_cfg['torch_dtype'])
 
     text_tower_cfg.pop('preset_name', None)
 
     with torch.device(device):
         # Build text tower
-        print(f" > Building TextTower: {text_tower_cfg.get('model_name')}")
+        logger.info("Building TextTower: %s", text_tower_cfg.get('model_name'))
         text_tower = TextTower(**text_tower_cfg)
         text_tower.requires_grad_(False)
         wrap_fsdp_module(text_tower, False)
@@ -156,58 +157,59 @@ def build_pipeline(
         # Build VAE
         vae_cfg = vae_config.copy()
         if 'torch_dtype' in vae_cfg:
-            vae_cfg['torch_dtype'] = str_to_torch_dtype(vae_cfg['torch_dtype'])
+            vae_cfg['torch_dtype'] = resolve_torch_dtype(vae_cfg['torch_dtype'])
 
-        print(f" > Building VaeTower: {vae_cfg.get('model_name')}")
+        logger.info("Building VaeTower: %s", vae_cfg.get('model_name'))
         vae = VaeTower(**vae_cfg)
         vae.requires_grad_(False)
         wrap_fsdp_module(vae, False)
 
     # Build schedulers
-    noise_scheduler, inference_noise_scheduler = build_schedulers(
+    schedulers = build_schedulers(
         prediction_type=prediction_type,
         timestep_shift=timestep_shift,
         num_train_timesteps=num_train_timesteps,
     )
-    wrap_fsdp_module(noise_scheduler, False)
-    wrap_fsdp_module(inference_noise_scheduler, False)
+    wrap_fsdp_module(schedulers.train, False)
+    wrap_fsdp_module(schedulers.inference, False)
 
     # Build denoiser - CRITICAL: adjust context_in_dim to match text_tower
     denoiser_cfg = denoiser_config.copy()
     if denoiser_cfg.get('context_in_dim') != text_tower.hidden_size:
-        print(
-            f" > WARNING: Adjusting context_in_dim from {denoiser_cfg.get('context_in_dim')} "
-            f"to {text_tower.hidden_size} to match text_tower.hidden_size"
+        logger.warning(
+            "Adjusting context_in_dim from %s to %s to match text_tower.hidden_size",
+            denoiser_cfg.get('context_in_dim'),
+            text_tower.hidden_size,
         )
         denoiser_cfg['context_in_dim'] = text_tower.hidden_size
 
     # Override in_channels if latent_channels is specified
     if latent_channels is not None:
         denoiser_cfg['in_channels'] = latent_channels
-        print(f" > Overriding denoiser in_channels to {latent_channels}")
+        logger.info("Overriding denoiser in_channels to %s", latent_channels)
         
 
     denoiser = PRX(denoiser_cfg)
-    print(" > Using PRX model")
+    logger.info("Using PRX model")
         
 
     # Apply dtype to denoiser
     if denoiser_dtype is not None:
-        denoiser_dtype = str_to_torch_dtype(denoiser_dtype)
+        denoiser_dtype = resolve_torch_dtype(denoiser_dtype)
         denoiser.to(denoiser_dtype)
-        print(f" > Denoiser dtype: {denoiser_dtype}")
+        logger.info("Denoiser dtype: %s", denoiser_dtype)
 
     wrap_fsdp_module(denoiser, True)
 
-    print(f" > Total denoiser params: {sum(p.numel() for p in denoiser.parameters()) / 1e9:.3f}B")
+    logger.info("Total denoiser params: %.3fB", sum(p.numel() for p in denoiser.parameters()) / 1e9)
 
     # Build pipeline
     pipeline = LatentDiffusion(
         denoiser=denoiser,
         vae=vae,
         text_tower=text_tower,
-        noise_scheduler=noise_scheduler,
-        inference_noise_scheduler=inference_noise_scheduler,
+        noise_scheduler=schedulers.train,
+        inference_noise_scheduler=schedulers.inference,
         p_drop_caption=p_drop_caption,
         train_metrics=train_metrics,
         val_metrics=val_metrics,
