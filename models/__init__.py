@@ -3,10 +3,6 @@ from models.vae_tower import VaeTower
 from models.prx import (
     PRX,
     PRXParams,
-    PRXTinyConfig,
-    PRXBaseConfig,
-    PRXSmallConfig,
-    PRXDCAESmallConfig,
     img2seq,
     seq2img,
 )
@@ -23,11 +19,6 @@ __all__ = [
     # PRX models
     "PRX",
     "PRXParams",
-    # Configs
-    "PRXTinyConfig",
-    "PRXBaseConfig",
-    "PRXSmallConfig",
-    "PRXDCAESmallConfig",
     # Utilities
     "img2seq",
     "seq2img",
