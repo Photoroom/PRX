@@ -1,0 +1,5 @@
+# Euler X-Prediction Scheduler
+defaults:
+  - euler_flow_matching
+
+prediction_type: x_prediction_flow_matching

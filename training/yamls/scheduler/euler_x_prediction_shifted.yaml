@@ -1,0 +1,5 @@
+# Euler X-Prediction with timestep shift
+defaults:
+  - euler_x_prediction
+
+timestep_shift: 3.0

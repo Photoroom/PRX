@@ -1,0 +1,5 @@
+# Euler Flow Matching with timestep shift (FLUX-style)
+defaults:
+  - euler_flow_matching
+
+timestep_shift: 3.0

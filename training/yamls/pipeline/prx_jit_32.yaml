@@ -7,3 +7,4 @@ defaults:
   - prx_standard
   - override /model@diffusion_model: prx_jit_32_small
   - override /vae@diffusion_vae: identity
+  - override /scheduler@diffusion_scheduler: euler_x_prediction_shifted

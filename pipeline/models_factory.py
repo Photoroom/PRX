@@ -52,27 +52,21 @@ def resolve_torch_dtype(dtype: Union[str, torch.dtype, None]) -> Optional[torch.
     raise ValueError(f"Unsupported dtype: {dtype}. Supported: {list(dtype_map.keys())}")
 
 
-def build_schedulers(
-    prediction_type: str = "flow_matching",
-    timestep_shift: Optional[int] = None,
-    num_train_timesteps: int = 1000,
-) -> Schedulers:
+def build_schedulers(scheduler_config: Dict[str, Any]) -> Schedulers:
     """Build training and inference noise schedulers.
 
     Args:
-        prediction_type: Type of prediction ("flow_matching")
-        timestep_shift: Optional timestep shift parameter (defaults to 1.0 if None)
-        num_train_timesteps: Number of training timesteps (default: 1000)
+        scheduler_config: Scheduler config dict (from scheduler/*.yaml)
 
     Returns:
         Schedulers namedtuple with train and inference schedulers
     """
     config = SchedulerConfig(
-        num_train_timesteps=num_train_timesteps,
-        prediction_type=prediction_type,
+        num_train_timesteps=scheduler_config.get('num_train_timesteps', 1000),
+        prediction_type=scheduler_config.get('prediction_type', 'flow_matching'),
     )
 
-    shift = float(timestep_shift) if timestep_shift is not None else 1.0
+    shift = float(scheduler_config.get('timestep_shift', 1.0))
     return Schedulers(
         train=EulerDiscreteScheduler(config=config, shift=shift),
         inference=EulerDiscreteScheduler(config=config, shift=shift),
@@ -90,13 +84,11 @@ def build_pipeline(
     denoiser_config: Dict[str, Any],
     text_tower_config: Dict[str, Any],
     vae_config: Dict[str, Any],
+    scheduler_config: Dict[str, Any],
 
     # Pipeline settings
     input_size: int = 512,
     p_drop_caption: float = 0.1,
-    prediction_type: str = "flow_matching",
-    timestep_shift: Optional[float] = None,
-    num_train_timesteps: int = 1000,
 
     # Metrics and validation
     train_metrics: Optional[List[Any]] = None,
@@ -119,11 +111,9 @@ def build_pipeline(
         denoiser_config: PRX model config dict (from model/*.yaml)
         text_tower_config: Text encoder config dict (from text_tower/*.yaml)
         vae_config: VAE config dict (from vae/*.yaml)
+        scheduler_config: Scheduler config dict (from scheduler/*.yaml)
         input_size: Input image size
         p_drop_caption: Caption drop probability for CFG
-        prediction_type: Noise prediction type
-        timestep_shift: Timestep shift parameter
-        num_train_timesteps: Number of training timesteps
         train_metrics: Training metrics list
         val_metrics: Validation metrics list
         val_guidance_scales: Guidance scales for validation
@@ -165,11 +155,7 @@ def build_pipeline(
         wrap_fsdp_module(vae, False)
 
     # Build schedulers
-    schedulers = build_schedulers(
-        prediction_type=prediction_type,
-        timestep_shift=timestep_shift,
-        num_train_timesteps=num_train_timesteps,
-    )
+    schedulers = build_schedulers(scheduler_config)
     wrap_fsdp_module(schedulers.train, False)
     wrap_fsdp_module(schedulers.inference, False)
 
