@@ -5,5 +5,5 @@
 
 defaults:
   - prx_standard
-  - /model@diffusion_model: prx_flux2
-  - /vae@diffusion_vae: flux2
+  - override /model@diffusion_model: prx_flux2
+  - override /vae@diffusion_vae: flux2

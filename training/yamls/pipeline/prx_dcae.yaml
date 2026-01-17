@@ -5,5 +5,5 @@
 
 defaults:
   - prx_standard
-  - /model@diffusion_model: prx_dcae_small
-  - /vae@diffusion_vae: dc_ae_sana
+  - override /model@diffusion_model: prx_dcae_small
+  - override /vae@diffusion_vae: dc_ae_sana

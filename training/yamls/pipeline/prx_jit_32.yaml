@@ -5,5 +5,5 @@
 
 defaults:
   - prx_standard
-  - /model@diffusion_model: prx_jit_32_small
-  - /vae@diffusion_vae: identity
+  - override /model@diffusion_model: prx_jit_32_small
+  - override /vae@diffusion_vae: identity
