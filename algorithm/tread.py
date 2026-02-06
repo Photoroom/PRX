@@ -10,6 +10,31 @@ class Tread(Algorithm):
     """
     TREAD: Token Routing for Efficient Architecture-agnostic Diffusion Training
     (https://arxiv.org/pdf/2501.04765v3)
+            img [B,N,C]         pe [B,1,N,...]
+             │                    │
+             ▼                    ▼
+        ┌─── pre-hook: gather ────────┐
+        │                             │
+   visible_tokens  routed_tokens  visible_pe
+   [B,Nv,C]        [B,Nr,C]          │
+        │               │            │
+        │               ▼            │
+        │            STASH           │
+        │               │            │
+        ▼               │            ▼
+   ┌────────────────────│──────────────┐
+   │ Blocks start → end │  (Nv tokens) │
+   └────────┬───────────│──────────────┘
+            │           │
+            ▼           ▼
+        ┌── post-hook: scatter ───────┐
+        │                             │
+        │  out[visible_idx] = visible │
+        │  out[routed_idx]  = stash   │
+        └─────────┬───────────────────┘
+                  ▼
+           img [B,N,C]  (restored)
+
 
     Assumptions:
       - The Composer model exposes `model.denoiser.blocks` as an `nn.ModuleList`.
