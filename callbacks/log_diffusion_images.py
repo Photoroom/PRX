@@ -173,9 +173,16 @@ class LogDiffusionImages(Callback):
 
                 # Log images on rank 0
                 if rank == 0:
-                    # Flatten list of images and get corresponding prompts
-                    all_images = list(itertools.chain.from_iterable(gathered_images))[: -self.padding_needed]  # type: ignore
-                    for i, (image, prompt) in enumerate(zip(all_images, self.prompt[: -self.padding_needed])):
+                    # Flatten list of images and, if padding was added, drop the padded tail
+                    all_images = list(itertools.chain.from_iterable(gathered_images))  # type: ignore
+                    if self.padding_needed:
+                        all_images = all_images[: -self.padding_needed]
+
+                    prompts = self.prompt
+                    if self.padding_needed:
+                        prompts = prompts[: -self.padding_needed]
+
+                    for i, (image, prompt) in enumerate(zip(all_images, prompts)):
                         truncated_prompt: str = prompt[:90] + "..." if len(prompt) > 90 else prompt
                         logger.log_images(
                             images=image.to(torch.float32),
