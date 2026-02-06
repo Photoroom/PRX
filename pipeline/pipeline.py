@@ -488,9 +488,8 @@ class LatentDiffusion(ComposerModel):
         if isinstance(metric, MeanSquaredError) and hasattr(metric, "loss_bin"):
             # Update metric for a specific timestep bin
             loss_bin = metric.loss_bin
-            T_max = self.noise_scheduler.config.num_train_timesteps
             bin_indices = torch.where(
-                (outputs["timesteps"] >= loss_bin[0] * T_max) & (outputs["timesteps"] < loss_bin[1] * T_max)
+                (outputs["timesteps"] >= loss_bin[0]) & (outputs["timesteps"] < loss_bin[1])
             )
             metric.update(outputs["prediction"][bin_indices], outputs["target"][bin_indices])
         else:
