@@ -4,6 +4,7 @@ This algorithm adds a contrastive loss term that encourages the denoiser to prod
 predictions that are different from the predictions for other samples in the batch.
 """
 
+import logging
 from typing import Any, Dict
 
 import torch
@@ -12,6 +13,8 @@ from composer.core import Algorithm, Event, State
 from composer.loggers import Logger
 
 from dataset.constants import BatchKeys
+
+log = logging.getLogger(__name__)
 
 
 class ContrastiveFlowMatching(Algorithm):
@@ -52,7 +55,7 @@ class ContrastiveFlowMatching(Algorithm):
         Wrap model.loss() method to inject contrastive loss computation.
         """
         if event == Event.INIT:
-            print(f" > ContrastiveFlowMatching: Initializing (lambda_weight={self.lambda_weight})")
+            log.info(f"ContrastiveFlowMatching: Initializing (lambda_weight={self.lambda_weight})")
 
             # Wrap the model's loss method to inject contrastive loss
             self._wrap_loss_method(state)
@@ -94,4 +97,4 @@ class ContrastiveFlowMatching(Algorithm):
 
         # Replace the loss method
         state.model.loss = augmented_loss
-        print(" > ContrastiveFlowMatching: Wrapped model.loss() method to inject contrastive loss computation")
+        log.info("ContrastiveFlowMatching: Wrapped model.loss() method to inject contrastive loss computation")
