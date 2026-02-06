@@ -1,0 +1,28 @@
+# @package dataset.eval_dataset
+# UNSPLASH evaluation dataset
+# Standard evaluation set for image quality assessment
+
+_target_: dataset.build_streaming_processed_dataloader
+remote:
+  # not applicable
+local:
+  - /mnt/data/datasets/gen_ai/t2i_1024_t5gemma2b/UNSPLASH
+
+caption_keys: ${caption_keys}
+text_tower: ${diffusion_text_tower.preset_name}
+cache_limit: 8tb
+download_timeout: 7200
+drop_last: true
+shuffle: true
+batching_method: device_per_stream
+prefetch_factor: 2
+num_workers: 8
+persistent_workers: true
+pin_memory: true
+has_mask_text_latents: true
+transforms:
+  - _target_: dataset.transforms.ArAwareResize
+    default_image_size: ${image_size}
+    patch_size_pixels: ${patch_size_pixels}
+transforms_targets:
+  - image

@@ -165,6 +165,8 @@ def train(config: DictConfig) -> None:
     scheduler = hydra.utils.instantiate(config.scheduler) if "scheduler" in config else None
 
     # Save config file in the checkpoint folder
+    # create the checkpoint folder if it doesn't exist
+    Path(config.trainer.save_folder).mkdir(parents=True, exist_ok=True)
     with open(Path(config.trainer.save_folder) / "config.yaml", "w") as f:
         OmegaConf.save(config, f)
 
