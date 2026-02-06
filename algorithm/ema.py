@@ -77,7 +77,6 @@ def compute_ema(model: torch.nn.Module, ema_model: EMAModel, smoothing: float = 
 
 def get_model_context_manager(model: torch.nn.Module) -> ContextManager[None]:
     """Summons full params for FSDP, which is required to update sharded params."""
-    """Summons full params for FSDP, which is required to update sharded params."""
     fsdp1_enabled = misc.is_model_fsdp(model) and os.environ.get("FSDP_VERSION", "1") == "1"
     model_context_manager = contextlib.nullcontext()
     if fsdp1_enabled:
@@ -102,8 +101,6 @@ class EMA(Algorithm):
     ema weights, EMA can double the model's memory consumption. Note that this does not mean that the total memory
     required doubles, since stored activations and the optimizer state are not duplicated. EMA also uses a small
     amount of extra compute to update the moving average weights.
-
-    See the :doc:`Method Card </method_cards/ema>` for more details.
 
     Args:
         half_life (str, optional): The time string specifying the half life for terms in the average. A longer half
@@ -203,8 +200,10 @@ class EMA(Algorithm):
         return False
 
     def apply(self, event: Event, state: State, logger: Logger) -> None:
-        assert isinstance(self.update_interval, Time)
-        assert isinstance(self.smoothing, float)
+        if not isinstance(self.update_interval, Time):
+            raise ValueError("self.update_interval must be of type Time.")
+        if not isinstance(self.smoothing, float):
+            raise ValueError("self.smoothing must be of type float.")
 
         ema_model = self.get_ema_model(state)
 
