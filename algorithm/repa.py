@@ -334,8 +334,8 @@ class REPA(Algorithm):
             # Compute REPA auxiliary loss
             # Note: TREAD will inject routing metadata via pre-hook if active
             repa_loss_value = repa_loss_module(
-                target_feature=batch.get(BatchKeys.target_representation, None),
-                image=batch.get(BatchKeys.image, None),
+                target_feature=batch.get(BatchKeys.TARGET_REPRESENTATION, None),
+                image=batch.get(BatchKeys.IMAGE, None),
             )
 
             # Log REPA loss separately
