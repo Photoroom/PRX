@@ -100,7 +100,7 @@ class REPALoss(torch.nn.Module):
             self.encoder = torch.compile(self.encoder)
         # Shared MLP - convert to same dtype as encoder
         self.mlp = MLP(denoiser_hidden_dim, self.encoder.hidden_dim).to(torch.bfloat16)
-        self.activations: torch.Tensor = {}
+        self.activations: Optional[torch.Tensor] = None
 
     def build_encoder(self, model: str) -> torch.nn.Module:
         if model.lower() in ["dinov2_vitl14_reg", "dinov3_vitl16"]:
@@ -116,7 +116,8 @@ class REPALoss(torch.nn.Module):
         tread_visible_idx: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if target_feature is None:
-            assert image is not None
+            if image is None:
+                raise ValueError("Either target_feature or image must be provided")
 
             # Use original number of tokens if TREAD is active
             if tread_original_num_tokens is not None:
@@ -140,6 +141,9 @@ class REPALoss(torch.nn.Module):
             expanded_idx = tread_visible_idx.unsqueeze(-1).expand(-1, -1, hidden_dim)
             target_feature = target_feature.gather(1, expanded_idx)
             # Now target_feature: [B, num_visible, hidden_dim] matching self.activations
+
+        if self.activations is None:
+            raise RuntimeError("Forward hook not yet invoked. Activations not captured.")
 
         loss = 0.0
         loss += torch.nn.functional.cosine_similarity(
@@ -330,8 +334,8 @@ class REPA(Algorithm):
             # Compute REPA auxiliary loss
             # Note: TREAD will inject routing metadata via pre-hook if active
             repa_loss_value = repa_loss_module(
-                target_feature=batch.get(BatchKeys.target_representation, None),
-                image=batch.get(BatchKeys.image, None),
+                target_feature=batch.get(BatchKeys.TARGET_REPRESENTATION, None),
+                image=batch.get(BatchKeys.IMAGE, None),
             )
 
             # Log REPA loss separately
