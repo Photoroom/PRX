@@ -37,58 +37,6 @@ class PRXParams:
     bottleneck_size: int | None = None
 
 
-PRXTinyConfig = PRXParams(
-    in_channels=4,
-    patch_size=2,
-    context_in_dim=512,
-    hidden_size=2304,
-    mlp_ratio=3.5,
-    num_heads=32,
-    depth=3,
-    axes_dim=[64, 64],
-    theta=10_000,
-)
-
-
-PRXBaseConfig = PRXParams(  # 7.3 B
-    in_channels=16,
-    patch_size=2,
-    context_in_dim=2304,
-    hidden_size=3584,
-    mlp_ratio=3.5,
-    num_heads=28,
-    depth=24,
-    axes_dim=[64, 64],
-    theta=10_000,
-)
-
-
-PRXSmallConfig = PRXParams(  # 1.24B - 159 ms
-    in_channels=16,
-    patch_size=2,
-    context_in_dim=2304,
-    hidden_size=1792,
-    mlp_ratio=3.5,
-    num_heads=28,
-    depth=16,
-    axes_dim=[32, 32],
-    theta=10_000,
-)
-
-
-PRXDCAESmallConfig = PRXParams(  # 1.24B - 159 ms
-    in_channels=32,
-    patch_size=1,
-    context_in_dim=2304,
-    hidden_size=1792,
-    mlp_ratio=3.5,
-    num_heads=28,
-    depth=16,
-    axes_dim=[32, 32],
-    theta=10_000,
-)
-
-
 def img2seq(img: Tensor, patch_size: int) -> Tensor:
     """
     Flatten an image into a sequence of patches
@@ -271,6 +219,9 @@ class PRX(nn.Module):
 
 
 if __name__ == "__main__":
+    from hydra import compose, initialize_config_dir
+    from pathlib import Path
+
     DEVICE = torch.device("cpu")
     DTYPE = torch.bfloat16
     TORCH_COMPILE = False
@@ -279,8 +230,10 @@ if __name__ == "__main__":
     LATENT_C = 16
     FEATURE_H, FEATURE_W = 1024 // 8, 1024 // 8
     PROMPT_L = 120
-    # Create the denoiser
-    config = PRXSmallConfig  # V2
+    # Create the denoiser - load config from YAML using Hydra composition
+    config_dir = str(Path(__file__).parent.parent / "training" / "yamls" / "model")
+    with initialize_config_dir(config_dir=config_dir, version_base=None):
+        config = compose(config_name="prx_small")
 
     denoiser = PRX(config)
     total_params = sum(p.numel() for p in denoiser.parameters())
