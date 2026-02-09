@@ -235,10 +235,11 @@ class StreamingProcessedDataset(ProcessedDataset):
     """Dataset that combines MosaicML streaming with sample processing.
 
     Args:
-        streams: Sequence of Stream objects defining data sources.
+        local: Local path(s) to dataset folders.
+        remote: Remote path(s) to dataset folders (optional).
         caption_keys: Caption field name(s), optionally with sampling weights.
         text_tower: Name of the text encoder preset for latent lookups.
-        split: Dataset split name.
+        prompt_max_tokens: Maximum sequence length for text embeddings.
         download_retry: Number of download retries per shard.
         download_timeout: Timeout in seconds for shard downloads.
         predownload: Number of shards to pre-download per worker.
@@ -247,38 +248,67 @@ class StreamingProcessedDataset(ProcessedDataset):
         batch_size: Batch size for batching method calculations.
         shuffle: Whether to shuffle samples.
         shuffle_seed: Random seed for shuffling.
+        proportions: Sampling proportions for each path.
         has_text_latents: Whether samples contain precomputed text latents.
         has_mask_text_latents: Whether samples contain attention masks for text latents.
         batching_method: How to batch across streams ("per_stream" or "random").
         transforms: List of transforms to apply to images.
         transforms_targets: Image keys to apply transforms to.
+        drop_last: Whether to drop the last incomplete batch (default: True).
+        prefetch_factor: Number of batches to prefetch per worker (optional).
+        num_workers: Number of worker processes for data loading (default: 0).
+        persistent_workers: Whether to keep workers alive between epochs (default: False).
+        pin_memory: Whether to use pinned memory for faster GPU transfer (default: False).
     """
 
     def __init__(
         self,
-        streams: Optional[Sequence[Stream]] = None,
+        local: Union[str, List[str]],
+        remote: Optional[Union[str, List[str]]] = None,
         caption_keys: Union[str, List[str], List[Tuple[str, float]]] = "caption",
         text_tower: str = "t5gemma2b-256-bf16",
-        split: Optional[str] = None,
-        download_retry: Optional[int] = 500,
-        download_timeout: Optional[float] = 120,
+        prompt_max_tokens: int = 256,
+        download_retry: int = 2,
+        download_timeout: float = 120,
         predownload: Optional[int] = None,
-        cache_limit: Optional[str] = "1tb",
+        cache_limit: str = "1tb",
         num_canonical_nodes: Optional[int] = None,
         batch_size: Optional[int] = None,
         shuffle: bool = False,
         shuffle_seed: int = 9146,
+        proportions: Optional[Union[float, List[float]]] = None,
         has_text_latents: bool = True,
-        has_mask_text_latents: bool = True,
+        has_mask_text_latents: bool = False,
         batching_method: str = "per_stream",
         transforms: Optional[List[Callable]] = None,
         transforms_targets: Union[List[str], str] = DEFAULT_DATA_AUG_TARGETS,
+        drop_last: bool = True,
+        prefetch_factor: Optional[int] = None,
+        num_workers: int = 0,
+        persistent_workers: bool = False,
+        pin_memory: bool = False,
     ):
+        # Build streams from paths
+        streams = []
+        for r_path, l_path, index_file, proportion in get_stream_iterator(local, remote, proportions):
+            if proportion is not None and proportion <= 0:
+                raise ValueError(f"Proportion must be positive, got {proportion}")
+            streams.append(
+                PatchedStream(
+                    remote=r_path,
+                    local=l_path,
+                    download_retry=download_retry,
+                    download_timeout=download_timeout,
+                    index_file=index_file,
+                    proportion=proportion,
+                )
+            )
+
         self._streaming_dataset = StreamingDataset(
             streams=streams,
             remote=None,
             local=None,
-            split=split,
+            split=None,
             download_retry=download_retry,
             download_timeout=download_timeout,
             validate_hash=None,
@@ -295,11 +325,35 @@ class StreamingProcessedDataset(ProcessedDataset):
             self,
             caption_keys=caption_keys,
             text_tower=text_tower,
+            prompt_max_tokens=prompt_max_tokens,
             has_text_latents=has_text_latents,
             has_mask_text_latents=has_mask_text_latents,
             transforms=transforms,
             transforms_targets=transforms_targets,
         )
+
+        # Store dataloader kwargs
+        self._dataloader_kwargs = {
+            "drop_last": drop_last,
+            "num_workers": num_workers,
+            "persistent_workers": persistent_workers,
+            "pin_memory": pin_memory,
+        }
+        if prefetch_factor is not None:
+            self._dataloader_kwargs["prefetch_factor"] = prefetch_factor
+
+        # Log summary
+        logger.info(
+            "--- Dataset Summary ---\n"
+            f"Remote: {remote} | Local: {local}\n"
+            f"Total size: {self.size} | This rank: {len(self)}\n"
+            f"Sum of stream samples: {sum(self.samples_per_stream)}"
+        )
+        for i, (stream, n_samples) in enumerate(zip(self.streams, self.samples_per_stream)):
+            location = stream.remote or stream.local
+            index = getattr(stream, 'index_file', INDEX_FILE)
+            logger.info(f"  Stream {i}: {location}/{index} - {n_samples} samples")
+        logger.info("-" * 23)
 
     def __len__(self) -> int:
         return len(self._streaming_dataset)
@@ -323,87 +377,7 @@ class StreamingProcessedDataset(ProcessedDataset):
         """Streaming datasets handle sampling internally."""
         return None
 
-
-def build_streaming_processed_dataloader(
-    local: Union[str, List[str]],
-    batch_size: int,
-    remote: Optional[Union[str, List[str]]] = None,
-    caption_keys: Union[str, List[str], List[Tuple[str, float]]] = "caption",
-    text_tower: str = "t5gemma2b-256-bf16",
-    num_samples: Optional[int] = None,
-    cache_limit: str = "1tb",
-    predownload: Optional[int] = None,
-    download_retry: int = 2,
-    download_timeout: float = 120,
-    drop_last: bool = True,
-    shuffle: bool = False,
-    shuffle_seed: int = 9146,
-    num_canonical_nodes: Optional[int] = None,
-    proportions: Optional[Union[float, List[float]]] = None,
-    batching_method: str = "per_stream",
-    transforms: Optional[List[Callable]] = None,
-    transforms_targets: Union[List[str], str] = DEFAULT_DATA_AUG_TARGETS,
-    has_text_latents: bool = True,
-    has_mask_text_latents: bool = False,
-    **dataloader_kwargs: Any,
-) -> DataLoader:
-    """Build a streaming dataloader for processed datasets."""
-
-    # Create streams
-    streams = []
-    for r_path, l_path, index_file, proportion in get_stream_iterator(local, remote, proportions):
-        if proportion is not None and proportion <= 0:
-            raise ValueError(f"Proportion must be positive, got {proportion}")
-
-        streams.append(
-            PatchedStream(
-                remote=r_path,
-                local=l_path,
-                download_retry=download_retry,
-                download_timeout=download_timeout,
-                index_file=index_file,
-                proportion=proportion,
-            )
-        )
-
-    # Build dataset
-    dataset = StreamingProcessedDataset(
-        streams=streams,
-        caption_keys=caption_keys,
-        text_tower=text_tower,
-        split=None,
-        download_retry=download_retry,
-        download_timeout=download_timeout,
-        predownload=predownload,
-        cache_limit=cache_limit,
-        num_canonical_nodes=num_canonical_nodes,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        shuffle_seed=shuffle_seed,
-        batching_method=batching_method,
-        transforms=transforms,
-        transforms_targets=transforms_targets,
-        has_text_latents=has_text_latents,
-        has_mask_text_latents=has_mask_text_latents,
-    )
-
-    # Apply subset if needed
-    if num_samples is not None:
-        dataset = torch.utils.data.Subset(dataset, range(num_samples))
-
-    # Log summary
-    logger.info("--- Dataset Summary ---")
-    logger.info(f"Remote: {remote} | Local: {local}")
-    logger.info(f"Total size: {dataset.size} | This rank: {len(dataset)}")
-    logger.info(f"Sum of stream samples: {sum(dataset.samples_per_stream)}")
-    for i, (stream, n_samples) in enumerate(zip(dataset.streams, dataset.samples_per_stream)):
-        location = stream.remote or stream.local
-        index = getattr(stream, 'index_file', INDEX_FILE)
-        logger.info(f"  Stream {i}: {location}/{index} - {n_samples} samples")
-    logger.info("-" * 23)
-
-    return dataset.get_dataloader(
-        batch_size=batch_size,
-        drop_last=drop_last,
-        **dataloader_kwargs,
-    )
+    def get_dataloader(self, batch_size: int, **kwargs: Any) -> DataLoader:
+        """Create a DataLoader using stored kwargs from config."""
+        merged_kwargs = {**self._dataloader_kwargs, **kwargs}
+        return super().get_dataloader(batch_size=batch_size, **merged_kwargs)

@@ -11,8 +11,6 @@ from torch.utils.data import DataLoader, default_collate
 from torchvision import tv_tensors
 from diffusers.utils.torch_utils import randn_tensor
 
-from models.text_tower import TextTowerPresets
-
 from .constants import BatchKeys
 from .transforms import image_to_tensor
 
@@ -156,6 +154,7 @@ class SampleProcessor:
         text_tower_name: str,
         has_text_latents: bool,
         has_mask_text_latents: bool,
+        prompt_max_tokens: int = 256,
         transforms: Optional[List[Callable]] = None,
         transform_targets: List[str] = None,
     ):
@@ -163,6 +162,7 @@ class SampleProcessor:
         self.text_tower_name = text_tower_name
         self.has_text_latents = has_text_latents
         self.has_mask_text_latents = has_mask_text_latents
+        self.prompt_max_tokens = prompt_max_tokens
         self.transforms = transforms or []
         self.transform_targets = transform_targets or DEFAULT_DATA_AUG_TARGETS
 
@@ -257,11 +257,10 @@ class SampleProcessor:
 
         if not self.has_mask_text_latents:
             # Verify shape matches expected length
-            expected_len = TextTowerPresets[self.text_tower_name]["model_max_length"]
-            if latent.shape[0] != expected_len:
+            if latent.shape[0] != self.prompt_max_tokens:
                 raise ValueError(
                     f"Prompt embedding length {latent.shape[0]} doesn't match "
-                    f"expected {expected_len} for {self.text_tower_name}"
+                    f"expected {self.prompt_max_tokens} for {self.text_tower_name}"
                 )
             return
 
@@ -308,15 +307,14 @@ class ProcessedDataset:
         self,
         caption_keys: CaptionKeys = "caption",
         text_tower: str = "t5gemma2b-256-bf16",
+        prompt_max_tokens: int = 256,
         has_text_latents: bool = True,
         has_mask_text_latents: bool = True,
         transforms: Optional[List[Callable]] = None,
         transforms_targets: Union[List[str], str] = DEFAULT_DATA_AUG_TARGETS,
     ):
-        if text_tower not in TextTowerPresets:
-            raise ValueError(f"Unknown text tower: {text_tower}")
-
         self.text_tower_name = text_tower
+        self.prompt_max_tokens = prompt_max_tokens
         self.has_text_latents = has_text_latents
         self.has_mask_text_latents = has_mask_text_latents
 
@@ -334,6 +332,7 @@ class ProcessedDataset:
             text_tower_name=text_tower,
             has_text_latents=has_text_latents,
             has_mask_text_latents=has_mask_text_latents,
+            prompt_max_tokens=prompt_max_tokens,
             transforms=transforms,
             transform_targets=transforms_targets,
         )
@@ -404,6 +403,8 @@ class DummyDataset(torch.utils.data.Dataset):
         num_samples: int = 1_000_000,
         image_size: tuple[int, int] = (256, 256),
         text_tower: str = "t5gemma2b-256-bf16",
+        prompt_max_tokens: int = 256,
+        hidden_dim: int = 2304,
         has_text_latents: bool = True,
         has_mask_text_latents: bool = False,
     ):
@@ -412,15 +413,8 @@ class DummyDataset(torch.utils.data.Dataset):
         self.text_tower = text_tower
         self.has_text_latents = has_text_latents
         self.has_mask_text_latents = has_mask_text_latents
-        self.seq_len = TextTowerPresets[text_tower]["model_max_length"]
-
-        # Get embedding dimension
-        if "t5xxl" in text_tower:
-            self.hidden_dim = 4096
-        elif "t5gemma2b" in text_tower:
-            self.hidden_dim = 2304
-        else:
-            raise ValueError(f"Unknown text tower: {text_tower}")
+        self.seq_len = prompt_max_tokens
+        self.hidden_dim = hidden_dim
 
     def __len__(self) -> int:
         return self.num_samples

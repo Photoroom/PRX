@@ -9,17 +9,6 @@ import html
 import re
 import urllib.parse as ul
 
-# Exposing some pre-defined configs
-TextTowerPresets = {
-    "t5gemma2b-256-bf16": {  # t5gemma
-        "model_name": "google/t5gemma-2b-2b-ul2",
-        "model_max_length": 256,
-        "use_attn_mask": True,
-        "use_last_hidden_state": True,
-    },
-}
-
-
 class TokenResult(NamedTuple):
     tokens: torch.Tensor
     attention_mask: torch.Tensor
@@ -36,7 +25,7 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
         model_name: str = "t5gemma2b-256-bf16",
         only_tokenizer: bool = False,
         use_attn_mask: bool = True,
-        model_max_length: int = 256,
+        prompt_max_tokens: int = 256,
         use_last_hidden_state: bool = True,
         torch_dtype: torch.dtype = torch.float32,
         unpadded: bool = False,
@@ -48,8 +37,8 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
         self.torch_dtype = torch_dtype
         self.unpadded = unpadded
 
-        self.tokenizer, self.text_encoder = self.create_model(model_name, model_max_length)
-        self.tokenizer_max_length = model_max_length
+        self.tokenizer, self.text_encoder = self.create_model(model_name, prompt_max_tokens)
+        self.tokenizer_max_length = prompt_max_tokens
         self.hidden_size = self.text_encoder.config.hidden_size if self.text_encoder else 0
         self.eval()
 
@@ -252,9 +241,9 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
     def forward(self, texts: str | list[str]) -> dict[str, torch.Tensor]:
         return self.text_to_embed(texts)
 
-    def create_model(self, model_config: str, model_max_length: int) -> tuple[AutoTokenizer, T5EncoderModel | None]:
+    def create_model(self, model_config: str, prompt_max_tokens: int) -> tuple[AutoTokenizer, T5EncoderModel | None]:
         tokenizer = GemmaTokenizerFast.from_pretrained(model_config)
-        tokenizer.model_max_length = model_max_length
+        tokenizer.prompt_max_tokens = prompt_max_tokens
         if self.only_tokenizer:
             return tokenizer, None
         else:

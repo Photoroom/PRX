@@ -13,12 +13,7 @@ hydra:
 project: PRX
 group: PRX-JIT-Benchmark-1024px
 name: Baseline
-text_tower: t5gemma2b-256-bf16
 nccl_sleep: 1
-caption_keys:
-  - [caption_llm_s, 1.]
-  - [caption, 1.]
-  - [caption_alt, 1.]
 activation_memory_budget: 1
 image_size: 1024
 patch_size_pixels: 32

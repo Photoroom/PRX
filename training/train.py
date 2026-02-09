@@ -5,16 +5,15 @@ with MosaicML Composer framework. It handles distributed training setup, optimiz
 configuration, algorithm registration, and model compilation.
 """
 
-from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, List
 import importlib
 
 import hydra
 import streaming
 import torch
 import torch._functorch.config as functorch_config
-from composer import Algorithm, Callback, ComposerModel, DataSpec, Trainer
+from composer import Algorithm, Callback, ComposerModel, Trainer
 from composer.loggers import LoggerDestination
 from composer.utils import dist
 from omegaconf import DictConfig, OmegaConf
@@ -143,13 +142,13 @@ def train(config: DictConfig) -> None:
     optimizer = create_optimizer(model, optimiser_config)
 
     # Create dataloaders
-    train_dataloader: Union[Iterable[Any], DataSpec, Dict[str, Any]] = hydra.utils.instantiate(
-        config.dataset.train_dataset,
+    train_dataset = hydra.utils.instantiate(config.dataset.train_dataset)
+    train_dataloader = train_dataset.get_dataloader(
         batch_size=config.global_batch_size // dist.get_world_size(),
     )
 
-    eval_set = hydra.utils.instantiate(
-        config.dataset.eval_dataset,
+    eval_dataset = hydra.utils.instantiate(config.dataset.eval_dataset)
+    eval_set = eval_dataset.get_dataloader(
         batch_size=config.device_eval_microbatch_size,
     )
 
@@ -230,7 +229,7 @@ def train(config: DictConfig) -> None:
     return eval_and_then_train()
 
 
-@hydra.main(version_base=None, config_path="yamls", config_name="PRX-JIT-1024")
+@hydra.main(version_base=None, config_path="yamls", config_name="JIT-benchmark/JIT-debug")
 def main(config: DictConfig) -> None:
     """Entry point for training with Hydra configuration management.
 

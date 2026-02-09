@@ -13,12 +13,7 @@ hydra:
 project: PRX
 group: PRX-FluxVAE-Benchmark-256px
 name: Baseline
-text_tower: t5gemma2b-256-bf16
 nccl_sleep: 1
-caption_keys:
-  - [caption_llm_s, 1.]
-  - [caption, 1.]
-  - [caption_alt, 1.]
 activation_memory_budget: 1
 image_size: 256
 patch_size_pixels: 32

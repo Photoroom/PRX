@@ -3,6 +3,7 @@ from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 
 import torch
 from composer.devices import DeviceGPU
+from omegaconf import DictConfig, OmegaConf
 
 from models.text_tower import TextTower
 from models.vae_tower import VaeTower
@@ -141,11 +142,10 @@ def build_pipeline(
 
     logger.info("Building diffusion pipeline V2 - device %s", device)
 
-    text_tower_cfg = text_tower_config.copy()
+    text_tower_cfg = OmegaConf.to_container(text_tower_config) if isinstance(text_tower_config, DictConfig) else dict(text_tower_config)
     if 'torch_dtype' in text_tower_cfg:
         text_tower_cfg['torch_dtype'] = resolve_torch_dtype(text_tower_cfg['torch_dtype'])
 
-    text_tower_cfg.pop('preset_name', None)
 
     with torch.device(device):
         # Build text tower

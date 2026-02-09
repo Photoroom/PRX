@@ -1,4 +1,4 @@
-from models.text_tower import TextTower, TextTowerPresets
+from models.text_tower import TextTower
 from models.vae_tower import VaeTower
 from models.prx import (
     PRX,
@@ -40,7 +40,6 @@ __all__ = [
     "timestep_embedding",
     # Text tower
     "TextTower",
-    "TextTowerPresets",
     # VAE tower
     "VaeTower",
 ]
