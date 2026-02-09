@@ -4,6 +4,7 @@ from dataset.dataset import (
     DummyDataset,
     ProcessedDataset,
     SampleProcessor,
+    DummyDataset,
 )
 from dataset.mds_dataset import StreamingProcessedDataset
 
@@ -16,4 +17,7 @@ __all__ = [
     "ProcessedDataset",
     "SampleProcessor",
     "StreamingProcessedDataset",
+    # Dataset builders
+    "DummyDataset",
+    "build_streaming_processed_dataloader",
 ]

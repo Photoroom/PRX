@@ -231,7 +231,7 @@ class PRX(nn.Module):
     def forward_transformers(
         self,
         image_latent: Tensor,
-        cross_attn_conditioning: Tensor,
+        prompt_embeds: Tensor,
         timestep: Optional[Tensor] = None,
         time_embedding: Optional[Tensor] = None,
         attention_mask: Optional[Tensor] = None,
@@ -247,7 +247,7 @@ class PRX(nn.Module):
                 raise ValueError("Please provide either a timestep or a timestep_embedding")
             vec = self.compute_timestep_embedding(timestep, dtype=img.dtype)
         for block in self.blocks:
-            img = block(img=img, txt=cross_attn_conditioning, vec=vec, attention_mask=attention_mask, **block_kwargs)
+            img = block(img=img, txt=prompt_embeds, vec=vec, attention_mask=attention_mask, **block_kwargs)
 
         img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
         return img
@@ -256,16 +256,16 @@ class PRX(nn.Module):
         self,
         image_latent: Tensor,
         timestep: Tensor,
-        cross_attn_conditioning: Tensor,  # TODO: rename text embedding everywhere
-        cross_attn_mask: None | Tensor = None,
+        prompt_embeds: Tensor,  # TODO: rename text embedding everywhere
+        prompt_attention_mask: None | Tensor = None,
     ) -> Tensor:
-        img_seq, txt, pe = self.process_inputs(image_latent, cross_attn_conditioning)
+        img_seq, txt, pe = self.process_inputs(image_latent, prompt_embeds)
         img_seq = self.forward_transformers(
             img_seq,
             txt,
             timestep,
             pe=pe,
-            attention_mask=cross_attn_mask,
+            attention_mask=prompt_attention_mask,
         )
         return seq2img(img_seq, self.patch_size, image_latent.shape)
 
@@ -293,8 +293,8 @@ if __name__ == "__main__":
     out = denoiser(
         image_latent=torch.randn(BS, LATENT_C, FEATURE_H, FEATURE_W, device=DEVICE, dtype=DTYPE),
         timestep=torch.zeros(BS, device=DEVICE, dtype=DTYPE),
-        cross_attn_conditioning=torch.zeros(BS, PROMPT_L, 2304, device=DEVICE, dtype=DTYPE),  # T5 text encoding
-        cross_attn_mask=torch.ones(BS, PROMPT_L, device=DEVICE, dtype=DTYPE),
+        prompt_embeds=torch.zeros(BS, PROMPT_L, 2304, device=DEVICE, dtype=DTYPE),  # T5 text encoding
+        prompt_attention_mask=torch.ones(BS, PROMPT_L, device=DEVICE, dtype=DTYPE),
     )
     loss = out.sum()
     loss.backward()
@@ -303,8 +303,8 @@ if __name__ == "__main__":
     out = denoiser(
         image_latent=torch.randn(BS, LATENT_C, FEATURE_H, FEATURE_W, device=DEVICE, dtype=DTYPE),
         timestep=torch.zeros(BS, device=DEVICE, dtype=DTYPE),
-        cross_attn_conditioning=torch.zeros(BS, PROMPT_L, 2304, device=DEVICE, dtype=DTYPE),  # T5 text encoding
-        cross_attn_mask=torch.ones(BS, PROMPT_L, device=DEVICE, dtype=DTYPE),
+        prompt_embeds=torch.zeros(BS, PROMPT_L, 2304, device=DEVICE, dtype=DTYPE),  # T5 text encoding
+        prompt_attention_mask=torch.ones(BS, PROMPT_L, device=DEVICE, dtype=DTYPE),
     )
     loss = out.sum()
     loss.backward()

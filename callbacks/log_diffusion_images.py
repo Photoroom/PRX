@@ -150,9 +150,9 @@ class LogDiffusionImages(Callback):
                 gen_images: List[torch.Tensor] = []
                 for i, (p, np) in enumerate(zip(gpu_prompts, gpu_neg_prompts)):
                     batch = {
-                        BatchKeys.prompt: [p],
-                        BatchKeys.negative_prompt: [np],
-                        BatchKeys.resolution: [image_size],
+                        BatchKeys.PROMPT: [p],
+                        BatchKeys.NEGATIVE_PROMPT: [np],
+                        BatchKeys.RESOLUTION: [image_size],
                     }
 
                     image: torch.Tensor = model.generate(

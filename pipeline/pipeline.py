@@ -186,10 +186,10 @@ class LatentDiffusion(ComposerModel):
     @torch.inference_mode()  # type: ignore
     def get_image_latents(self, batch: Dict[BatchKeys, Any]) -> Dict[ModelInputs, torch.Tensor]:
         """Return the image latent from the batch. Check for precomputed latents first"""
-        if BatchKeys.image_latent in batch:
-            image_latent = self.scale_image_latent(batch[BatchKeys.image_latent])
-        elif BatchKeys.image in batch:
-            image_latent = self.image_to_latent(batch[BatchKeys.image])
+        if BatchKeys.IMAGE_LATENT in batch:
+            image_latent = self.scale_image_latent(batch[BatchKeys.IMAGE_LATENT])
+        elif BatchKeys.IMAGE in batch:
+            image_latent = self.image_to_latent(batch[BatchKeys.IMAGE])
         else:
             raise ValueError(
                 "Could not get the image latent from the batch. "
@@ -213,13 +213,13 @@ class LatentDiffusion(ComposerModel):
     @torch.no_grad()  # type: ignore
     def get_text_embedding(self, batch: Dict[BatchKeys, Any]) -> Dict[ModelInputs, torch.Tensor]:
         """Return the text latent from the batch. Check for precomputed latents first"""
-        if BatchKeys.prompt_embedding in batch:
-            text_mask = batch.get(BatchKeys.prompt_embedding_mask) if self.text_tower.use_attn_mask else None
+        if BatchKeys.PROMPT_EMBEDDING in batch:
+            text_mask = batch.get(BatchKeys.PROMPT_EMBEDDING_MASK) if self.text_tower.use_attn_mask else None
             if self.text_tower.use_attn_mask and text_mask is None:
                 raise ValueError("Could not get the text embeddings masks from the batch.")
-            text_embedding = batch[BatchKeys.prompt_embedding]
-        elif BatchKeys.prompt in batch:
-            text_tower_output = self.encode_texts(batch[BatchKeys.prompt], device=self.denoiser_device)
+            text_embedding = batch[BatchKeys.PROMPT_EMBEDDING]
+        elif BatchKeys.PROMPT in batch:
+            text_tower_output = self.encode_texts(batch[BatchKeys.PROMPT], device=self.denoiser_device)
             text_mask = text_tower_output.get("attention_mask", None)
             text_embedding = text_tower_output["text_embed"]
         else:
@@ -257,7 +257,7 @@ class LatentDiffusion(ComposerModel):
         )
         # Negative Prompts
         batch_size = len(denoiser_kwargs[ModelInputs.PROMPT_EMBEDS])
-        negative_prompt = batch.get(BatchKeys.negative_prompt, [self.negative_prompt] * batch_size)
+        negative_prompt = batch.get(BatchKeys.NEGATIVE_PROMPT, [self.negative_prompt] * batch_size)
         device = denoiser_kwargs[ModelInputs.IMAGE_LATENT].device
         uncond_text_tower_output = self.encode_texts(negative_prompt, device=device)
         denoiser_kwargs[ModelInputs.PROMPT_EMBEDS] = torch.concat(
@@ -425,27 +425,28 @@ class LatentDiffusion(ComposerModel):
 
     def get_image_size_from_batch(self, batch: Dict[BatchKeys, Any]) -> ImageSize:
         """Return ImageSize (height, width) from a batch."""
-        if BatchKeys.image in batch:
-            shape = batch[BatchKeys.image].shape[-2:]
+        if BatchKeys.IMAGE in batch:
+            shape = batch[BatchKeys.IMAGE].shape[-2:]
             return ImageSize(height=int(shape[0]), width=int(shape[1]))
         else:
-            h, w = batch[BatchKeys.image_latent].shape[-2:]
+            h, w = batch[BatchKeys.IMAGE_LATENT].shape[-2:]
             return ImageSize(height=int(h * self.vae_scale_factor), width=int(w * self.vae_scale_factor))
 
     def get_image_latent_size_from_batch(self, batch: Dict[BatchKeys, Any]) -> ImageSize:
         """Return ImageSize (height, width) of image latents from a batch."""
-        if BatchKeys.image_latent in batch:
-            shape = batch[BatchKeys.image_latent].shape[-2:]
+        if BatchKeys.IMAGE_LATENT in batch:
+            shape = batch[BatchKeys.IMAGE_LATENT].shape[-2:]
             return ImageSize(height=int(shape[0]), width=int(shape[1]))
         else:
-            h, w = batch[BatchKeys.image].shape[-2:]
+            h, w = batch[BatchKeys.IMAGE].shape[-2:]
             return ImageSize(height=h // self.vae_scale_factor, width=w // self.vae_scale_factor)
 
     def get_batch_size_from_batch(self, batch: Dict[BatchKeys, Any]) -> int:
         """Return the batch size from a batch dict."""
-        if BatchKeys.image_latent in batch:
-            return len(batch[BatchKeys.image_latent])
-        return len(batch[BatchKeys.image])
+        for key in (BatchKeys.IMAGE_LATENT, BatchKeys.IMAGE, BatchKeys.PROMPT):
+            if key in batch:
+                return len(batch[key])
+        raise ValueError("Cannot infer batch size: batch contains none of IMAGE_LATENT, IMAGE, or PROMPT")
 
     # ============================================================
     # EVALUATION & METRICS
@@ -615,8 +616,8 @@ class LatentDiffusion(ComposerModel):
 
         # 3. Prepare denoiser inputs
         do_cfg = (guidance_scale > 1.0)
-        if BatchKeys.image_latent not in batch:
-            batch[BatchKeys.image_latent] = latents
+        if BatchKeys.IMAGE_LATENT not in batch:
+            batch[BatchKeys.IMAGE_LATENT] = latents
         denoiser_kwargs = self.get_denoiser_kwargs(batch=batch, do_cfg=do_cfg)
         denoiser_kwargs.pop(ModelInputs.IMAGE_LATENT)  # Will be updated per step
 

@@ -27,7 +27,7 @@ from callbacks.feature_extractors import CLIPFeatureExtractor, DINOFeatureExtrac
 from dataset.constants import BatchKeys
 from pipeline.pipeline import LatentDiffusion
 
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 
 def _rbf_kernel_sum_chunked(x: torch.Tensor, y: torch.Tensor, gamma: float, chunk_size: int) -> torch.Tensor:
@@ -350,7 +350,7 @@ class LogQualityMetrics(Callback):
         self._per_worker_limit = max(1, self.max_samples // world_size)
 
         if dist.get_global_rank() == 0:
-            logger.info(
+            _logger.info(
                 "Global max_samples: %d, World size: %d, Per-worker limit: %d",
                 self.max_samples, world_size, self._per_worker_limit,
             )
@@ -420,12 +420,12 @@ class LogQualityMetrics(Callback):
         batch = state.batch
 
         batch_size = (
-            batch[BatchKeys.image].shape[0] if BatchKeys.image in batch else batch[BatchKeys.image_latent].shape[0]
+            batch[BatchKeys.IMAGE].shape[0] if BatchKeys.IMAGE in batch else batch[BatchKeys.IMAGE_LATENT].shape[0]
         )
 
         if self._samples_processed >= self._per_worker_limit:
             if dist.get_global_rank() == 0:
-                logger.info(
+                _logger.info(
                     "Rank 0: Reached per-worker limit (%d samples). "
                     "Computing metrics (global total: ~%d)...",
                     self._per_worker_limit, self._per_worker_limit * dist.get_world_size(),
@@ -438,10 +438,10 @@ class LogQualityMetrics(Callback):
         image_size = (image_h, image_w)
 
         # Real images
-        if BatchKeys.image in batch:
-            real_images = batch[BatchKeys.image]
+        if BatchKeys.IMAGE in batch:
+            real_images = batch[BatchKeys.IMAGE]
         else:
-            real_images = model.latent_to_image(batch[BatchKeys.image_latent])
+            real_images = model.latent_to_image(batch[BatchKeys.IMAGE_LATENT])
 
         real_images = torch.clamp(real_images * 255.0, 0, 255).to(torch.uint8)
         if real_images.ndim == 4 and real_images.shape[-1] in (1, 3):
@@ -496,16 +496,16 @@ class LogQualityMetrics(Callback):
                     metric_name = f"metrics/eval/{metric_type}_scale_{scale_str}"
 
                     if dist.get_global_rank() == 0:
-                        logger.info("Logging %s: %s", metric_name, score_val)
+                        _logger.info("Logging %s: %s", metric_name, score_val)
 
                     logger.log_metrics({metric_name: score_val}, step=state.timestamp.batch.value)
 
                 except RuntimeError as e:
-                    logger.error("Rank %d: Error computing %s for scale %s: %s",
-                                 dist.get_global_rank(), metric_type, scale, e)
+                    _logger.error("Rank %d: Error computing %s for scale %s: %s",
+                                  dist.get_global_rank(), metric_type, scale, e)
                 except Exception as e:
-                    logger.error("Rank %d: Unexpected error computing %s for scale %s: %s: %s",
-                                 dist.get_global_rank(), metric_type, scale, type(e).__name__, e)
+                    _logger.error("Rank %d: Unexpected error computing %s for scale %s: %s: %s",
+                                  dist.get_global_rank(), metric_type, scale, type(e).__name__, e)
                 finally:
                     metric.reset()
 
@@ -518,7 +518,7 @@ class LogQualityMetrics(Callback):
         if not self._metric_computation_done:
             if dist.get_global_rank() == 0:
                 global_total = self._samples_processed * dist.get_world_size()
-                logger.info(
+                _logger.info(
                     "Computing metrics after processing %d samples per worker "
                     "(global total: ~%d)...",
                     self._samples_processed, global_total,
