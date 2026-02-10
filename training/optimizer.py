@@ -52,7 +52,7 @@ def _collect_trainable(
 # ── Standard optimizer factory ──────────────────────────────────────
 
 
-def standard_optimizer(
+def create_standard_optimizer(
     model: torch.nn.Module,
     optimizer_class: str,
     parameter_name_filter: Optional[List[str]] = None,
@@ -84,6 +84,7 @@ def create_muon_optimizer(
     model: torch.nn.Module,
     muon_config: Dict[str, Any],
     adam_config: Dict[str, Any],
+    **_kwargs: Any,
 ) -> torch.optim.Optimizer:
     """Create a ``muon_fsdp2.Muon`` optimizer with param group splitting.
 

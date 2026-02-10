@@ -1,6 +1,6 @@
 # @package _global_
 defaults:
-  - Flux-Baseline
+  - JIT-Baseline
   - _self_
 
 name: Muon_fsdp
@@ -24,4 +24,4 @@ optimizer:
     weight_decay: 0.
 
 trainer:
-  save_folder: checkpoints/Flux-Muon
+  save_folder: checkpoints/JIT-Muon
