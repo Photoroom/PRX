@@ -1,10 +1,10 @@
-"""REPA (Representation Alignment) Algorithm for Composer (https://arxiv.org/abs/2410.06940).
+"""REPA (https://arxiv.org/abs/2410.06940) and iREPA (https://arxiv.org/pdf/2512.10794) Algorithms for Composer.
 
-This algorithm adds an auxiliary loss that aligns intermediate denoiser features
-with frozen pretrained encoder (e.g., DINOv3) representations via a trainable MLP.
+These algorithms add an auxiliary loss that aligns intermediate denoiser features
+with frozen pretrained encoder (e.g., DINOv3 or DINOv2) representations via a trainable projector.
 """
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import torch
 import torchvision
@@ -34,6 +34,91 @@ class MLP(nn.Module):
         x = self.silu(x)
         x = self.out_layer(x)
         return x
+
+
+class AttentionProjector(nn.Module):
+    """Projector with RoPE positional encoding and linear output for iREPA."""
+
+    def __init__(self, embed_dim: int, out_dim: int, num_heads: int = 4, theta: float = 10000.0):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        assert self.head_dim * num_heads == embed_dim, "embed_dim must be divisible by num_heads"
+
+        self.theta = theta
+
+        self.q_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+        self.k_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+        self.v_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+        self.out_proj = nn.Linear(embed_dim, embed_dim, bias=True)
+        self.output = nn.Linear(embed_dim, out_dim)
+
+    def rope(self, pos: Tensor, dim: int, theta: float) -> Tensor:
+        """Compute RoPE embeddings from positions.
+
+        Args:
+            pos: Position coordinates [B, N]
+            dim: Dimension for RoPE (should be even)
+            theta: RoPE theta parameter
+
+        Returns:
+            RoPE embeddings [B, N, dim//2, 2, 2]
+        """
+        assert dim % 2 == 0
+        scale = torch.arange(0, dim, 2, dtype=torch.float64, device=pos.device) / dim
+        omega = 1.0 / (theta**scale)
+        out = pos.unsqueeze(-1) * omega.unsqueeze(0)  # (B,N,1) * (1,D//2) -> B, N, D//2
+        out = torch.stack([torch.cos(out), -torch.sin(out), torch.sin(out), torch.cos(out)], dim=-1)
+        out = out.view(*out.shape[:-1], 2, 2)
+        return out.float()
+
+    def apply_rope(self, xq: Tensor, freqs_cis: Tensor) -> Tensor:
+        """Apply RoPE rotation to query or key tensor.
+
+        Args:
+            xq: Query or key tensor [B, H, N, D_h]
+            freqs_cis: RoPE embeddings [B, N, D_h//2, 2, 2]
+
+        Returns:
+            Rotated tensor [B, H, N, D_h]
+        """
+        xq_ = xq.float().reshape(*xq.shape[:-1], -1, 1, 2)
+        freqs_cis = freqs_cis.unsqueeze(1)
+        xq_out = freqs_cis[..., 0] * xq_[..., 0] + freqs_cis[..., 1] * xq_[..., 1]
+        return xq_out.reshape(*xq.shape).type_as(xq)
+
+    def forward(self, x: Tensor, h_coords: Tensor, w_coords: Tensor) -> Tensor:
+        """Forward pass with RoPE positional encoding.
+
+        Args:
+            x: Input tensor [B, N, D]
+            h_coords: Height coordinates [B, N]
+            w_coords: Width coordinates [B, N]
+
+        Returns:
+            Output tensor [B, N, out_dim]
+        """
+        B, N, D = x.shape
+
+        q = self.q_proj(x).view(B, N, self.num_heads, self.head_dim).transpose(1, 2)  # [B, H, N, D_h]
+        k = self.k_proj(x).view(B, N, self.num_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(x).view(B, N, self.num_heads, self.head_dim).transpose(1, 2)
+
+        rope_h = self.rope(h_coords, self.head_dim // 2, self.theta)  # [B, N, D_h//4, 2, 2]
+        rope_w = self.rope(w_coords, self.head_dim // 2, self.theta)  # [B, N, D_h//4, 2, 2]
+
+        freqs_cis = torch.cat([rope_h, rope_w], dim=2)  # [B, N, D_h//2, 2, 2]
+
+        q = self.apply_rope(q, freqs_cis)
+        k = self.apply_rope(k, freqs_cis)
+
+        attn = torch.nn.functional.scaled_dot_product_attention(q, k, v)  # [B, H, N, D_h]
+
+        attn = attn.transpose(1, 2).contiguous().view(B, N, D)  # [B, N, D]
+        out = self.out_proj(attn)
+
+        return self.output(out)
 
 
 class DinoWrapper(torch.nn.Module):
@@ -70,17 +155,13 @@ class DinoWrapper(torch.nn.Module):
             param.requires_grad = False
         self.hidden_dim = self.model.embed_dim
 
-    def forward(self, img: torch.Tensor, denoiser_downsampling_ratio: int) -> Dict[str, torch.Tensor]:
+    def forward(self, img: torch.Tensor, denoiser_downsampling_ratio: int) -> torch.Tensor:
         # resize image
         resize_factor = self.patch_size_pixels / denoiser_downsampling_ratio
         img = torch.nn.functional.interpolate(img, scale_factor=resize_factor)
         # normalize
         img = torchvision.transforms.functional.normalize(img, mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD)
-        features = self.model.forward_features(img)
-        return {
-            "cls_token": features["x_norm_clstoken"],      # [B, hidden_dim]
-            "patch_tokens": features["x_norm_patchtokens"],  # [B, num_patches, hidden_dim]
-        }
+        return self.model.forward_features(img)["x_norm_patchtokens"]  # [B, num_patches, hidden_dim]
 
 
 class REPALoss(torch.nn.Module):
@@ -98,9 +179,14 @@ class REPALoss(torch.nn.Module):
         self.encoder = self.build_encoder(encoder) if encoder else None
         if compile_encoder and self.encoder is not None:
             self.encoder = torch.compile(self.encoder)
-        # Shared MLP - convert to same dtype as encoder
-        self.mlp = MLP(denoiser_hidden_dim, self.encoder.hidden_dim).to(torch.bfloat16)
-        self.activations: Optional[torch.Tensor] = None
+        # Shared projector (MLP) - convert to same dtype as encoder
+        self.projector = MLP(denoiser_hidden_dim, self.encoder.hidden_dim).to(torch.bfloat16)
+        self.activations: torch.Tensor = {}
+
+    @property
+    def mlp(self) -> nn.Module:
+        """Alias for projector for backward compatibility."""
+        return self.projector
 
     def build_encoder(self, model: str) -> torch.nn.Module:
         if model.lower() in ["dinov2_vitl14_reg", "dinov3_vitl16"]:
@@ -116,8 +202,7 @@ class REPALoss(torch.nn.Module):
         tread_visible_idx: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if target_feature is None:
-            if image is None:
-                raise ValueError("Either target_feature or image must be provided")
+            assert image is not None
 
             # Use original number of tokens if TREAD is active
             if tread_original_num_tokens is not None:
@@ -127,8 +212,7 @@ class REPALoss(torch.nn.Module):
 
             denoiser_downsampling_ratio = (image.shape[-1] * image.shape[-2] / num_denoiser_tokens) ** 0.5
             with torch.inference_mode():
-                features = self.encoder(image.to(torch.bfloat16), denoiser_downsampling_ratio)
-                target_feature = features["patch_tokens"]  # Use patch tokens for REPA
+                target_feature = self.encoder(image.to(torch.bfloat16), denoiser_downsampling_ratio)
 
         # If TREAD is active, select only visible tokens from target features
         if tread_visible_idx is not None:
@@ -142,12 +226,8 @@ class REPALoss(torch.nn.Module):
             target_feature = target_feature.gather(1, expanded_idx)
             # Now target_feature: [B, num_visible, hidden_dim] matching self.activations
 
-        if self.activations is None:
-            raise RuntimeError("Forward hook not yet invoked. Activations not captured.")
-
-        loss = 0.0
-        loss += torch.nn.functional.cosine_similarity(
-            self.mlp(self.activations), target_feature, dim=2, eps=1e-8
+        loss = torch.nn.functional.cosine_similarity(
+            self.projector(self.activations), target_feature, dim=2, eps=1e-8
         ).mean()
 
         return -self.lambda_weight * loss  # maximise
@@ -162,6 +242,152 @@ class REPALoss(torch.nn.Module):
             return hook
 
         denoiser.blocks[self.layer_index].register_forward_hook(get_activation())
+
+
+class iREPALoss(REPALoss):
+    """iREPA loss with convolutional projection and spatial normalization on encoder features."""
+
+    def __init__(
+        self,
+        denoiser_hidden_dim: int,
+        lambda_weight: float = 0.5,
+        layer_index: int = 8,
+        encoder: str = "dinov3_vitl16",
+        compile_encoder: bool = True,
+        use_attention_projector: bool = False,
+        num_attention_heads: int = 4,
+        rope_theta: float = 10000.0,
+    ):
+        super().__init__(
+            denoiser_hidden_dim=denoiser_hidden_dim,
+            lambda_weight=lambda_weight,
+            layer_index=layer_index,
+            encoder=encoder,
+            compile_encoder=compile_encoder,
+        )
+        self.use_attention_projector = use_attention_projector
+
+        if use_attention_projector:  # for TREAD compatibility
+            self.projector = AttentionProjector(
+                embed_dim=denoiser_hidden_dim,
+                out_dim=self.encoder.hidden_dim,
+                num_heads=num_attention_heads,
+                theta=rope_theta,
+            ).to(torch.bfloat16)
+        else:
+            self.projector = nn.Conv2d(denoiser_hidden_dim, self.encoder.hidden_dim, kernel_size=3, padding=1).to(
+                torch.bfloat16
+            )
+
+    def _infer_spatial_dimensions(
+        self,
+        image: torch.Tensor,
+        tread_original_num_tokens: Optional[int],
+        current_num_tokens: int,
+    ) -> Tuple[int, int]:
+        """Infer original spatial dimensions (H, W) in token space.
+
+        Args:
+            image: Original image tensor [B, 3, H_image, W_image]
+            tread_original_num_tokens: Original number of tokens before TREAD routing
+            current_num_tokens: Current number of tokens
+
+        Returns:
+            (H_orig, W_orig) in token space
+        """
+        # Use TREAD's original token count if available, else current count
+        num_tokens = tread_original_num_tokens if tread_original_num_tokens is not None else current_num_tokens
+
+        H_image, W_image = image.shape[-2:]
+        downsampling_ratio = (H_image * W_image / num_tokens) ** 0.5
+        H_latent = int(H_image / downsampling_ratio)
+        W_latent = int(W_image / downsampling_ratio)
+
+        return H_latent, W_latent
+
+    def forward(
+        self,
+        target_feature: Optional[torch.Tensor] = None,
+        image: Optional[torch.Tensor] = None,
+        tread_original_num_tokens: Optional[int] = None,
+        tread_visible_idx: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        if target_feature is None:
+            assert image is not None
+
+            # Use original number of tokens if TREAD is active
+            if tread_original_num_tokens is not None:
+                num_denoiser_tokens = tread_original_num_tokens
+            else:
+                num_denoiser_tokens = self.activations.shape[-2]
+
+            denoiser_downsampling_ratio = (image.shape[-1] * image.shape[-2] / num_denoiser_tokens) ** 0.5
+            with torch.inference_mode():
+                target_feature = self.encoder(image.to(torch.bfloat16), denoiser_downsampling_ratio)
+
+        # Spatial normalization on encoder features [B, T, D]
+        # Note: dim=2 corresponds to the feature dimension D
+        gamma = target_feature.mean(dim=2, keepdim=True)
+        target_feature = target_feature - gamma * target_feature.mean(dim=1, keepdim=True)
+        target_feature = target_feature / (target_feature.std(dim=1, keepdim=True) + 1e-6)
+
+        # If TREAD is active, select only visible tokens from target features
+        if tread_visible_idx is not None:
+            # self.activations: [B, num_visible, hidden_dim]
+            # target_feature: [B, num_original, hidden_dim]
+            # visible_idx: [B, num_visible]
+
+            hidden_dim = target_feature.shape[-1]
+            # Gather visible tokens
+            expanded_idx = tread_visible_idx.unsqueeze(-1).expand(-1, -1, hidden_dim)
+            target_feature = target_feature.gather(1, expanded_idx)
+            # Now target_feature: [B, num_visible, hidden_dim] matching self.activations
+
+        # Hybrid projection: Conv2d when all tokens are visible case, attention for TREAD case
+        B, T, D = self.activations.shape
+        H_orig, W_orig = self._infer_spatial_dimensions(image, tread_original_num_tokens, T)
+
+        if tread_visible_idx is not None and not self.use_attention_projector:
+            raise ValueError("TREAD is active but attention projector is not used. This is not supported.")
+
+        if self.use_attention_projector:
+            # Attention path: TREAD-compatible
+            if tread_visible_idx is not None:
+                # Convert flat indices to 2D coordinates for RoPE
+                h_coords = (tread_visible_idx // W_orig).float()  # [B, num_visible]
+                w_coords = (tread_visible_idx % W_orig).float()  # [B, num_visible]
+
+            else:
+                # No TREAD: use full grid coordinates
+                h_coords = (
+                    torch.arange(H_orig, device=self.activations.device)
+                    .repeat_interleave(W_orig)
+                    .unsqueeze(0)
+                    .expand(B, -1)
+                    .float()
+                )
+                w_coords = (
+                    torch.arange(W_orig, device=self.activations.device)
+                    .repeat(H_orig)
+                    .unsqueeze(0)
+                    .expand(B, -1)
+                    .float()
+                )
+
+            projected = self.projector(self.activations, h_coords=h_coords, w_coords=w_coords)
+
+        else:
+            # Conv2d path: spatial inductive bias
+            # Reshape to spatial format [B, T, D] -> [B, D, H, W]
+            activations_spatial = self.activations.permute(0, 2, 1).reshape(B, D, H_orig, W_orig)
+            # Apply conv projection
+            projected = self.projector(activations_spatial)
+            # Reshape back to [B, T, D_out]
+            projected = projected.reshape(B, self.encoder.hidden_dim, -1).permute(0, 2, 1)
+
+        loss = torch.nn.functional.cosine_similarity(projected, target_feature, dim=2, eps=1e-8).mean()
+
+        return -self.lambda_weight * loss  # maximise
 
 class REPA(Algorithm):
     """
@@ -210,6 +436,27 @@ class REPA(Algorithm):
         self._hooks_registered = False
         self._modules_added = False
 
+    def _get_log_prefix(self) -> str:
+        """Return the logging prefix for this algorithm ('repa' or 'irepa')."""
+        return "repa"
+
+    def _get_init_message(self) -> str:
+        """Return the initialization message to print."""
+        return (
+            f" > REPA: Initializing hooks and loss wrapper (lambda_weight={self.lambda_weight}, "
+            f"layer_index={self.layer_index}, encoder={self.encoder})"
+        )
+
+    def _get_hyperparameters(self) -> Dict[str, Any]:
+        """Return hyperparameters to log."""
+        prefix = self._get_log_prefix()
+        return {
+            f"{prefix}/lambda_weight": self.lambda_weight,
+            f"{prefix}/layer_index": self.layer_index,
+            f"{prefix}/encoder": self.encoder,
+            f"{prefix}/compile_encoder": self.compile_encoder,
+        }
+
     def add_new_pipeline_modules(self, model: torch.nn.Module) -> None:
         """
         Add REPA MLP module to the model before optimizer creation.
@@ -247,7 +494,7 @@ class REPA(Algorithm):
         # Move to bfloat16 (REPALoss uses bfloat16 internally)
         self.repa_loss = self.repa_loss.to(dtype=torch.bfloat16)
 
-        num_params = sum(p.numel() for p in self.repa_loss.mlp.parameters())
+        num_params = sum(p.numel() for p in self.repa_loss.projector.parameters())
         print(f" > REPA: Added MLP module with {num_params:,} parameters")
 
         self._modules_added = True
@@ -279,16 +526,16 @@ class REPA(Algorithm):
             else:
                 model_unwrapped = state.model
 
+            prefix = self._get_log_prefix().upper()
             if not hasattr(model_unwrapped, 'repa_loss'):
                 raise RuntimeError(
-                    "REPA module not found on model. Did you call add_new_pipeline_modules() "
+                    f"{prefix} module not found on model. Did you call add_new_pipeline_modules() "
                     "in train.py before creating the optimizer?"
                 )
 
             self.repa_loss = model_unwrapped.repa_loss
 
-            print(f" > REPA: Initializing hooks and loss wrapper (lambda_weight={self.lambda_weight}, "
-                  f"layer_index={self.layer_index}, encoder={self.encoder})")
+            print(self._get_init_message())
 
             # Move to same device as denoiser (dtype already set to bfloat16 in add_new_pipeline_modules)
             device = next(denoiser.parameters()).device
@@ -303,12 +550,7 @@ class REPA(Algorithm):
             self._wrap_loss_method(state)
 
             # Log hyperparameters
-            logger.log_hyperparameters({
-                "repa/lambda_weight": self.lambda_weight,
-                "repa/layer_index": self.layer_index,
-                "repa/encoder": self.encoder,
-                "repa/compile_encoder": self.compile_encoder,
-            })
+            logger.log_hyperparameters(self._get_hyperparameters())
 
     def _resolve_denoiser(self, model: torch.nn.Module) -> torch.nn.Module:
         """Resolve denoiser from (possibly wrapped) model."""
@@ -347,4 +589,130 @@ class REPA(Algorithm):
         # Replace the loss method
         state.model.loss = augmented_loss
         print(" > REPA: Wrapped model.loss() method to inject REPA loss computation")
+
+
+class iREPA(REPA):
+    """
+    Improved Representation Alignment (iREPA) Algorithm.
+
+    Extends REPA with:
+    - Spatial normalization on encoder features
+    - Choice between Conv2d or Attention projector
+    - TREAD-compatible attention projector with RoPE positional encoding
+
+    Args:
+        lambda_weight: Weight for iREPA loss term (default: 0.5)
+        layer_index: Which denoiser block to capture activations from (default: 8)
+        encoder: Encoder model name, e.g., "dinov3_vitl16" or "dinov2_vitl14_reg" (default: "dinov3_vitl16")
+        compile_encoder: Whether to torch.compile the encoder (default: True)
+        use_attention_projector: Use attention projector instead of Conv2d (default: True)
+        num_attention_heads: Number of attention heads for attention projector (default: 4)
+        rope_theta: RoPE theta parameter (default: 10000.0)
+
+    Example:
+        In your YAML config:
+
+        algorithms:
+          irepa:
+            _target_: algorithm.repa.iREPA
+            lambda_weight: 0.5
+            layer_index: 7
+            encoder: "dinov3_vitl16"
+            use_attention_projector: true
+            num_attention_heads: 4
+    """
+
+    def __init__(
+        self,
+        lambda_weight: float = 0.5,
+        layer_index: int = 8,
+        encoder: str = "dinov3_vitl16",
+        compile_encoder: bool = True,
+        use_attention_projector: bool = True,
+        num_attention_heads: int = 4,
+        rope_theta: float = 10000.0,
+    ):
+        # Call parent __init__ with base REPA parameters
+        super().__init__(
+            lambda_weight=lambda_weight,
+            layer_index=layer_index,
+            encoder=encoder,
+            compile_encoder=compile_encoder,
+        )
+        # Add iREPA-specific parameters
+        self.use_attention_projector = use_attention_projector
+        self.num_attention_heads = num_attention_heads
+        self.rope_theta = rope_theta
+
+    def _get_log_prefix(self) -> str:
+        """Return the logging prefix for iREPA."""
+        return "irepa"
+
+    def _get_init_message(self) -> str:
+        """Return the initialization message for iREPA."""
+        projector_type = "Attention" if self.use_attention_projector else "Conv2d"
+        return (
+            f" > iREPA: Initializing hooks and loss wrapper (lambda_weight={self.lambda_weight}, "
+            f"layer_index={self.layer_index}, encoder={self.encoder}, projector={projector_type})"
+        )
+
+    def _get_hyperparameters(self) -> Dict[str, Any]:
+        """Return hyperparameters to log, including iREPA-specific params."""
+        # Get base hyperparameters from parent
+        hyperparams = super()._get_hyperparameters()
+        # Add iREPA-specific hyperparameters
+        prefix = self._get_log_prefix()
+        hyperparams.update({
+            f"{prefix}/use_attention_projector": self.use_attention_projector,
+            f"{prefix}/num_attention_heads": self.num_attention_heads,
+            f"{prefix}/rope_theta": self.rope_theta,
+        })
+        return hyperparams
+
+    def add_new_pipeline_modules(self, model: torch.nn.Module) -> None:
+        """
+        Add iREPA projector module to the model before optimizer creation.
+
+        This method is called from train.py before the optimizer is instantiated,
+        ensuring that the projector parameters are automatically included in the optimizer.
+
+        Args:
+            model: The pipeline model (will be wrapped by DDP/FSDP later)
+        """
+        if self._modules_added:
+            print(" > iREPA: Modules already added, skipping")
+            return
+
+        # Resolve denoiser from model
+        denoiser = model.denoiser
+        denoiser_hidden_dim = denoiser.hidden_size
+
+        projector_type = "Attention" if self.use_attention_projector else "Conv2d"
+        print(
+            f" > iREPA: Adding {projector_type} projector module (lambda_weight={self.lambda_weight}, "
+            f"layer_index={self.layer_index}, encoder={self.encoder})"
+        )
+
+        # Create iREPALoss module with projector
+        self.repa_loss = iREPALoss(
+            denoiser_hidden_dim=denoiser_hidden_dim,
+            lambda_weight=self.lambda_weight,
+            layer_index=self.layer_index,
+            encoder=self.encoder,
+            compile_encoder=self.compile_encoder,
+            use_attention_projector=self.use_attention_projector,
+            num_attention_heads=self.num_attention_heads,
+            rope_theta=self.rope_theta,
+        )
+
+        # Attach to model (not denoiser) to ensure it's accessible for TREAD
+        model.repa_loss = self.repa_loss
+
+        # Move to bfloat16 (iREPALoss uses bfloat16 internally)
+        self.repa_loss = self.repa_loss.to(dtype=torch.bfloat16)
+
+        num_params = sum(p.numel() for p in self.repa_loss.projector.parameters())
+        print(f" > iREPA: Added {projector_type} projector with {num_params:,} parameters")
+
+        self._modules_added = True
 
