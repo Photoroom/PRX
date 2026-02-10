@@ -236,9 +236,8 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
     """Dataset that combines MosaicML streaming with sample processing.
 
     Args:
-        streams: Sequence of Stream objects defining data sources (optional).
-        local: Local path(s) to dataset folders (required if streams not provided).
-        remote: Remote path(s) to dataset folders (optional, used with local).
+        local: Local path(s) to dataset folders.
+        remote: Remote path(s) to dataset folders (optional).
         caption_keys: Caption field name(s), optionally with sampling weights.
         text_tower: Name of the text encoder preset for latent lookups.
         prompt_max_tokens: Maximum sequence length for text embeddings.
@@ -265,13 +264,11 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
 
     def __init__(
         self,
-        streams: Optional[Sequence[Stream]] = None,
-        local: Optional[Union[str, List[str]]] = None,
+        local: Union[str, List[str]],
         remote: Optional[Union[str, List[str]]] = None,
         caption_keys: Union[str, List[str], List[Tuple[str, float]]] = "caption",
         text_tower: str = "t5gemma2b-256-bf16",
         prompt_max_tokens: int = 256,
-        split: Optional[str] = None,
         download_retry: int = 2,
         download_timeout: float = 120,
         predownload: Optional[int] = None,
@@ -292,31 +289,28 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
         persistent_workers: bool = False,
         pin_memory: bool = False,
     ):
-        # Build streams from paths if not provided
-        if streams is None:
-            if local is None:
-                raise ValueError("Either 'streams' or 'local' must be provided")
-            streams = []
-            for r_path, l_path, index_file, proportion in get_stream_iterator(local, remote, proportions):
-                if proportion is not None and proportion <= 0:
-                    raise ValueError(f"Proportion must be positive, got {proportion}")
-                streams.append(
-                    PatchedStream(
-                        remote=r_path,
-                        local=l_path,
-                        download_retry=download_retry,
-                        download_timeout=download_timeout,
-                        index_file=index_file,
-                        proportion=proportion,
-                    )
+        # Build streams from paths
+        streams = []
+        for r_path, l_path, index_file, proportion in get_stream_iterator(local, remote, proportions):
+            if proportion is not None and proportion <= 0:
+                raise ValueError(f"Proportion must be positive, got {proportion}")
+            streams.append(
+                PatchedStream(
+                    remote=r_path,
+                    local=l_path,
+                    download_retry=download_retry,
+                    download_timeout=download_timeout,
+                    index_file=index_file,
+                    proportion=proportion,
                 )
+            )
 
         StreamingDataset.__init__(
             self,
             streams=streams,
             remote=None,
             local=None,
-            split=split,
+            split=None,
             download_retry=download_retry,
             download_timeout=download_timeout,
             validate_hash=None,
@@ -351,10 +345,12 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
             self._dataloader_kwargs["prefetch_factor"] = prefetch_factor
 
         # Log summary
-        logger.info("--- Dataset Summary ---")
-        logger.info(f"Remote: {remote} | Local: {local}")
-        logger.info(f"Total size: {self.size} | This rank: {len(self)}")
-        logger.info(f"Sum of stream samples: {sum(self.samples_per_stream)}")
+        logger.info(
+            "--- Dataset Summary ---\n"
+            f"Remote: {remote} | Local: {local}\n"
+            f"Total size: {self.size} | This rank: {len(self)}\n"
+            f"Sum of stream samples: {sum(self.samples_per_stream)}"
+        )
         for i, (stream, n_samples) in enumerate(zip(self.streams, self.samples_per_stream)):
             location = stream.remote or stream.local
             index = getattr(stream, 'index_file', INDEX_FILE)
@@ -367,8 +363,16 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
     def _get_raw_item(self, index: int) -> Dict[str, Any]:
         return StreamingDataset.__getitem__(self, index)
 
+    def _get_sampler(self, shuffle: bool) -> None:
+        # StreamingDataset is an IterableDataset — it handles shuffling/sharding
+        # internally, so DataLoader must not receive a sampler.
+        return None
+
     def get_dataloader(self, batch_size: int, **kwargs: Any) -> DataLoader:
         """Create a DataLoader using stored kwargs from config."""
+        # StreamingDataset needs batch_size set before iteration for deterministic
+        # resumption and optimal worker partitioning.
+        self.batch_size = batch_size
         merged_kwargs = {**self._dataloader_kwargs, **kwargs}
         return super().get_dataloader(batch_size=batch_size, **merged_kwargs)
 

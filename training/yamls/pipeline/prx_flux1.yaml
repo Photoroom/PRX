@@ -7,5 +7,6 @@ defaults:
   - /model@diffusion_model: prx_small
   - /text_tower@diffusion_text_tower: t5gemma2b_256_bf16
   - /vae@diffusion_vae: flux_dev
+  - /scheduler@diffusion_scheduler: euler_flow_matching
 
 denoiser_dtype: torch.float

@@ -42,12 +42,12 @@ model:
   text_tower_config: ${diffusion_text_tower}
   vae_config: ${diffusion_vae}
 
+  # Scheduler config (from scheduler/*.yaml via pipeline defaults)
+  scheduler_config: ${diffusion_scheduler}
+
   # Additional Pipeline settings
   input_size: ${image_size}
   p_drop_caption: 0.1
-  prediction_type: "flow_matching"
-  timestep_shift: 1.
-  num_train_timesteps: 1000
 
   # Validation metrics
   val_metrics:

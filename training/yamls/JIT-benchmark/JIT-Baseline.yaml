@@ -43,12 +43,12 @@ model:
   text_tower_config: ${diffusion_text_tower}
   vae_config: ${diffusion_vae}
 
+  # Scheduler config (from scheduler/*.yaml via pipeline defaults)
+  scheduler_config: ${diffusion_scheduler}
+
   # Pipeline settings
   input_size: ${image_size}
   p_drop_caption: 0.1
-  prediction_type: "x_prediction_flow_matching"
-  timestep_shift: 3.
-  num_train_timesteps: 1000
   # Validation
   val_metrics:
     - _target_: torchmetrics.MeanSquaredError
