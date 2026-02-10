@@ -61,7 +61,9 @@ model:
 
 # Muon optimizer: 2D weight matrices in blocks use Newton-Schulz
 # orthogonalization, everything else falls back to Adam.
-muon_optimizer:
+optimizer:
+  _target_: optimizer.create_muon_optimizer
+  _recursive_: false
   muon_config:
     lr: 1.0e-4
     momentum: 0.95

@@ -59,7 +59,9 @@ model:
     - [0.6, 1.0]
 
 optimizer:
-  _target_: torch.optim.AdamW  # match the optimizer from the pixart training.
+  _target_: optimizer.create_standard_optimizer
+  _recursive_: false
+  optimizer_class: torch.optim.AdamW
   lr: 1.0e-4
   weight_decay: 0.
   eps: 1.0e-15

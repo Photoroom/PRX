@@ -20,7 +20,6 @@ from streaming.base.distributed import maybe_init_dist
 from torch import distributed as torch_dist
 from torch.nn.parallel import DistributedDataParallel
 
-from optimizer import create_optimizers
 from seed_utils import set_seeds
 
 
@@ -86,7 +85,7 @@ def train(config: DictConfig) -> None:
             algorithm.add_new_pipeline_modules(model)
 
     # Create optimizer (includes any modules added by algorithms)
-    optimizer = create_optimizers(model, config)
+    optimizer = hydra.utils.instantiate(config.optimizer, model=model)
 
     # Create dataloaders
     train_dataset = hydra.utils.instantiate(config.dataset.train_dataset)
