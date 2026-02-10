@@ -1,0 +1,147 @@
+# @package _global_
+defaults:
+  - /pipeline: prx_flux1
+  - /dataset@dataset.train_dataset: train_small
+  - /dataset@dataset.eval_dataset: eval_unsplash
+  - /prompts@callbacks.image_monitor.prompt: eval_prompts
+  - _self_
+
+hydra:
+  job:
+    env_set:
+      FSDP_VERSION: "2"
+
+project: PRX
+group: PRX-FluxVAE-Throughput-Benchmark-256px-blog
+name: Muon_fsdp
+text_tower: t5gemma2b-256-bf16
+nccl_sleep: 1
+caption_keys:
+  - [caption_llm_s, 1.]
+activation_memory_budget: 1
+image_size: 256
+patch_size_pixels: 32
+global_batch_size: 256
+device_train_microbatch_size: 32
+device_eval_microbatch_size: 32
+seed: 42
+eval_first: false
+compile_denoiser: true
+compile_vae: true
+
+algorithms:
+  gradient_clipping:
+    _target_: composer.algorithms.GradientClipping
+    clipping_type: "norm"
+    clipping_threshold: 0.2
+
+model:
+  _target_: pipeline.models_factory.build_pipeline
+
+  # Component configs from Hydra groups
+  denoiser_config: ${diffusion_model}
+  text_tower_config: ${diffusion_text_tower}
+  vae_config: ${diffusion_vae}
+
+  # Scheduler config (from scheduler/*.yaml via pipeline defaults)
+  scheduler_config: ${diffusion_scheduler}
+
+  # Additional Pipeline settings
+  input_size: ${image_size}
+  p_drop_caption: 0.1
+
+  # Validation metrics
+  val_metrics:
+    - _target_: torchmetrics.MeanSquaredError
+  val_guidance_scales: []
+  loss_bins:
+    - [0.0, 0.3]
+    - [0.3, 0.6]
+    - [0.6, 1.0]
+
+# Muon optimizer: 2D weight matrices in blocks use Newton-Schulz
+# orthogonalization, everything else falls back to Adam.
+muon_optimizer:
+  muon_config:
+    lr: 1.0e-4
+    momentum: 0.95
+    nesterov: true
+    ns_steps: 5
+    rms_scale: true
+    weight_decay: 0.
+  adam_config:
+    lr: 1.0e-4
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 0.
+
+scheduler:
+  _target_: composer.optim.MultiStepWithWarmupScheduler
+  t_warmup: 1000ba
+  milestones:
+    - 1e9ep
+
+logger:
+  wandb:
+    _target_: composer.loggers.WandBLogger
+    project: ${project}
+    group: ${group}
+    name: ${name}
+
+callbacks:
+  speed_monitor:
+    _target_: composer.callbacks.speed_monitor.SpeedMonitor
+    window_size: 10
+  lr_monitor:
+    _target_: composer.callbacks.lr_monitor.LRMonitor
+  memory_monitor:
+    _target_: composer.callbacks.memory_monitor.MemoryMonitor
+  runtime_estimator:
+    _target_: composer.callbacks.runtime_estimator.RuntimeEstimator
+  optimizer_monitor:
+    _target_: composer.callbacks.OptimizerMonitor
+  nan_monitor:
+    _target_: composer.callbacks.NaNMonitor
+  image_monitor:
+    _target_: callbacks.LogDiffusionImages
+    size: ${image_size} # generated image resolution
+    guidance_scale: 3.5
+    seed: 42
+  generation_metrics:
+    _target_: callbacks.LogQualityMetrics
+    frequency: 10_000ba
+    guidance_scales: [3.5]
+    seed: 42
+    num_inference_steps: 50
+    compute_fid: true
+    compute_cmmd: true
+    compute_dino_mmd: true
+    max_samples: 10_000
+
+trainer:
+  _target_: composer.Trainer
+  device: gpu
+  max_duration: 100_000ba
+  eval_interval: 10_000ba
+  eval_subset_num_batches: 64
+  device_train_microbatch_size: ${device_train_microbatch_size}
+  run_name: ${group}-${name}
+  seed: ${seed}
+  scale_schedule_ratio: 1.0
+  save_folder: checkpoints/Flux-Muon
+  save_interval: 10_000ba
+  save_num_checkpoints_to_keep: 1
+  save_overwrite: true
+  save_weights_only: true
+  save_ignore_keys:
+    - state/model/vae*
+    - state/model/text_tower*
+  autoresume: false
+  precision: amp_bf16
+  dist_timeout: 7200.
+  parallelism_config:
+    fsdp:
+      ## FSDP2
+      reshard_after_forward: false
+      device_mesh: mesh_2d
+      use_orig_params: true

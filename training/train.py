@@ -7,7 +7,6 @@ configuration, algorithm registration, and model compilation.
 
 from pathlib import Path
 from typing import Any, List
-import importlib
 
 import hydra
 import streaming
@@ -21,6 +20,7 @@ from streaming.base.distributed import maybe_init_dist
 from torch import distributed as torch_dist
 from torch.nn.parallel import DistributedDataParallel
 
+from optimizer import create_optimizers
 from seed_utils import set_seeds
 
 
@@ -35,58 +35,6 @@ def clean_up_mosaic() -> None:
         "This ensures node stability and prevents potential resource leaks."
     )
     streaming.base.util.clean_stale_shared_memory()
-
-
-def _resolve_torch_optimizer(target: str):
-    # Accept "AdamW" or "torch.optim.AdamW"
-    if "." not in target:
-        return getattr(torch.optim, target)
-
-    module_path, cls_name = target.rsplit(".", 1)
-    module = importlib.import_module(module_path)
-    return getattr(module, cls_name)
-
-
-def create_optimizer(
-    model: torch.nn.Module,
-    optimiser_config: dict[str, Any],
-) -> torch.optim.Optimizer:
-    """Create an optimizer with optional parameter filtering.
-
-    Args:
-        model: The model to optimize
-        optimiser_config: Optimizer configuration dict with optional filters:
-            - parameter_name_filter: Only train params containing these strings
-            - parameter_freeze_name_filter: Freeze params containing these strings
-            - _target_: Optimizer class (e.g., torch.optim.AdamW)
-
-    Returns:
-        Configured optimizer instance
-    """
-    key_name_filter = optimiser_config.pop("parameter_name_filter", None)
-    freeze_name_filter = optimiser_config.pop("parameter_freeze_name_filter", None)
-
-    def selected(name: str) -> bool:
-        """Check if parameter should be trainable based on name filters."""
-        if key_name_filter and not any(k in name for k in key_name_filter):
-            return False
-        if freeze_name_filter and any(k in name for k in freeze_name_filter):
-            return False
-        return True
-
-    trainable = [(n, p) for n, p in model.named_parameters() if selected(n)]
-
-    if key_name_filter or freeze_name_filter:
-        print("Trainable parameters:")
-        print("\n".join(n for n, _ in trainable))
-
-    print(f"-> Layers to train: {len(trainable)}")
-    print(f"-> Parameters to train: {sum(p.numel() for _, p in trainable):_}")
-
-    opt_target = optimiser_config.pop("_target_")  # likely "torch.optim.AdamW"
-    opt_class = _resolve_torch_optimizer(opt_target) if isinstance(opt_target, str) else opt_target
-
-    return opt_class(params=[p for _, p in trainable], **optimiser_config)
 
 
 def train(config: DictConfig) -> None:
@@ -138,8 +86,7 @@ def train(config: DictConfig) -> None:
             algorithm.add_new_pipeline_modules(model)
 
     # Create optimizer (includes any modules added by algorithms)
-    optimiser_config = OmegaConf.to_container(config.optimizer)
-    optimizer = create_optimizer(model, optimiser_config)
+    optimizer = create_optimizers(model, config)
 
     # Create dataloaders
     train_dataset = hydra.utils.instantiate(config.dataset.train_dataset)
