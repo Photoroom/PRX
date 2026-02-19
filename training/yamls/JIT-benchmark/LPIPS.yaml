@@ -10,7 +10,7 @@ algorithms:
     _target_: algorithm.lpips.LPIPS
     lpips_weight: 0.1
     lpips_net: vgg
-    t_threshold: 0.3
+    t_threshold: 1
     resize_factor: 0.5
 
 save_folder: checkpoints/LPIPS
