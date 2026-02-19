@@ -1,9 +1,11 @@
-from typing import Any, Dict, List, Optional
+import contextlib
+from typing import Any, Callable, Dict, Generator, List, Optional
 
 import torch
 from composer.core import Algorithm, Event, State
 from composer.loggers import Logger
 from torch import Tensor, nn
+from tqdm.auto import tqdm
 
 
 class Tread(Algorithm):
@@ -55,6 +57,7 @@ class Tread(Algorithm):
         detach: bool = False,
         seed: Optional[int] = None,
         train_only: bool = True,
+        self_guidance: bool = False,
     ) -> None:
         super().__init__()
         assert 0 <= route_start < route_end, "Require 0 <= route_start < route_end"
@@ -66,6 +69,7 @@ class Tread(Algorithm):
         self.detach = bool(detach)
         self.seed = seed
         self.train_only = bool(train_only)
+        self.self_guidance = bool(self_guidance)
 
         self._enabled: bool = True
         self._handles: List[Any] = []
@@ -81,6 +85,8 @@ class Tread(Algorithm):
         self._denoiser_hook_handle: Optional[Any] = None
         self._repa_loss: Optional[nn.Module] = None
         self._repa_hook_handle: Optional[Any] = None
+        # Auto-CFG state
+        self._original_generate: Optional[Callable[..., Any]] = None
 
     def match(self, event: Event, state: State) -> bool:
         if event in (Event.FIT_START, Event.FIT_END):
@@ -119,8 +125,12 @@ class Tread(Algorithm):
 
         elif self.train_only and event is Event.EVAL_START:
             self._enabled = False
+            if self.self_guidance:
+                self._wrap_generate_for_self_guidance(state)
 
         elif self.train_only and event is Event.EVAL_END:
+            if self.self_guidance:
+                self._unwrap_generate_for_self_guidance(state)
             self._enabled = True
 
         # per-batch seed, for activation checkpointing determinism
@@ -487,3 +497,162 @@ class Tread(Algorithm):
                 return (out_full, *extra)
             else:  # list
                 return [out_full, *extra]
+
+    # ============================================================
+    # AUTO-CFG: Token-routing as guidance during inference
+    # ============================================================
+    #
+    #   Instead of classical CFG (null-prompt vs real-prompt), use TREAD's
+    #   token routing as the degradation mechanism:
+    #
+    #     full pass  (all N tokens, real prompt)  →  "conditional"
+    #     routed pass (N_vis tokens, real prompt) →  "unconditional"
+    #
+    #     output = routed + scale × (full − routed)
+    #
+    #   At EVAL_START we monkey-patch model.generate so the existing pipeline
+    #   and callbacks pick it up transparently.  At EVAL_END we restore.
+    # ============================================================
+
+    @contextlib.contextmanager
+    def self_guidance_context(self, denoiser: nn.Module) -> Generator["Tread", None, None]:
+        """Register temporary routing hooks on *denoiser* and yield self for _enabled toggling.
+
+        If the inference denoiser is the EMA copy (separate blocks), we register
+        temporary hooks.  If it is the training denoiser (same blocks — e.g. when
+        EMA is not used), we reuse the existing training hooks to avoid duplicates
+        and ``torch.compile`` issues.
+        """
+        blocks = self._get_blocks(denoiser)
+        handles: List[Any] = []
+
+        # Only register new hooks when the inference denoiser has different
+        # blocks from the training denoiser (i.e. EMA copy).  When they are the
+        # same object the training hooks are already present (and compiled into
+        # the torch.compile graph), so adding a second set would cause double-
+        # routing and shape mismatches.
+        reuse_training_hooks = blocks is self._blocks
+
+        if not reuse_training_hooks:
+            handles.append(
+                blocks[self.route_start].register_forward_pre_hook(self._pre_route_start, with_kwargs=True)
+            )
+            for i in range(self.route_start + 1, self.route_end + 1):
+                handles.append(blocks[i].register_forward_pre_hook(self._pre_middle_layers, with_kwargs=True))
+            handles.append(
+                blocks[self.route_end].register_forward_hook(self._post_route_end, with_kwargs=True)
+            )
+
+        prev_enabled = self._enabled
+        self._enabled = False
+        self._reset_routing_state()
+
+        try:
+            yield self
+        finally:
+            for h in handles:
+                h.remove()
+            self._enabled = prev_enabled
+            self._reset_routing_state()
+
+    def set_inference_seed(self, seed: int) -> None:
+        """Set a deterministic seed for routing during inference."""
+        self._step_seed = self._compute_batch_seed(seed, self._get_rank())
+
+    def _wrap_generate_for_self_guidance(self, state: State) -> None:
+        """Replace ``state.model.generate`` with an auto-CFG version at EVAL_START."""
+        from pipeline.pipeline import ModelInputs
+
+        model = state.model
+        self._original_generate = model.generate
+        algo = self
+        original_generate = self._original_generate
+
+        @torch.no_grad()
+        def self_guidance_generate(
+            batch: Dict,
+            image_size: Any,
+            num_inference_steps: Any = 50,
+            guidance_scale: float = 7.0,
+            seed: Any = None,
+            progress_bar: bool = False,
+            init_latents: Any = None,
+            denoiser: Any = None,
+            decode_latents: bool = True,
+            **kwargs: Any,
+        ) -> Tensor:
+            # No guidance requested → fall back to original (single pass, no CFG)
+            if guidance_scale <= 1.0:
+                return original_generate(
+                    batch=batch, image_size=image_size,
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale, seed=seed,
+                    progress_bar=progress_bar, init_latents=init_latents,
+                    denoiser=denoiser, decode_latents=decode_latents, **kwargs,
+                )
+
+            # ── 1. Setup (mirrors pipeline.generate) ──────────────────
+            device = model.vae.device
+            denoiser = denoiser or (
+                model.ema_denoiser if model.ema_denoiser.is_active else model.denoiser
+            )
+            batch_size = model.get_batch_size_from_batch(batch)
+            latents = model._initialize_latents(batch_size, image_size, init_latents, seed, device)
+
+            # ── 2. Prepare denoiser kwargs (NO CFG batch — same prompt for both passes)
+            from dataset.constants import BatchKeys
+
+            if BatchKeys.IMAGE_LATENT not in batch:
+                batch[BatchKeys.IMAGE_LATENT] = latents
+            denoiser_kwargs = model.get_denoiser_kwargs(batch=batch, do_cfg=False)
+            denoiser_kwargs.pop(ModelInputs.IMAGE_LATENT)
+
+            # ── 3. Setup timesteps ────────────────────────────────────
+            if hasattr(denoiser, "set_timesteps"):
+                denoiser.set_timesteps(num_inference_steps, model.inference_scheduler)
+            else:
+                model.inference_scheduler.set_timesteps(num_inference_steps)
+            latents = latents * model.inference_scheduler.init_noise_sigma
+
+            # ── 4. Resolve actual denoiser for hook registration ──────
+            # EMAModel wraps the real denoiser in .model
+            actual_denoiser = getattr(denoiser, "model", denoiser)
+
+            # ── 5. Deterministic seed for routing ─────────────────────
+            if seed is not None:
+                algo.set_inference_seed(seed if isinstance(seed, int) else seed[0])
+
+            # ── 6. Denoising loop with auto-CFG ──────────────────────
+            with algo.self_guidance_context(actual_denoiser) as routing:
+                for t in tqdm(model.inference_scheduler.timesteps, disable=not progress_bar):
+                    latent_input = model.inference_scheduler.scale_model_input(latents, t)
+                    ts = t.repeat(batch_size).to(
+                        device=model.denoiser_device, dtype=model.denoiser_dtype
+                    )
+
+                    # Full pass (all tokens)
+                    routing._enabled = False
+                    full_output = denoiser(
+                        image_latent=latent_input, timestep=ts, **denoiser_kwargs
+                    )
+
+                    # Routed pass (token-dropped)
+                    routing._enabled = True
+                    routed_output = denoiser(
+                        image_latent=latent_input, timestep=ts, **denoiser_kwargs
+                    )
+
+                    # Auto-CFG guidance:  routed + scale × (full − routed)
+                    model_output = routed_output + guidance_scale * (full_output - routed_output)
+                    latents = model.inference_scheduler.step(model_output, t, latents, generator=None)
+
+            # ── 7. Decode ─────────────────────────────────────────────
+            return model.latent_to_image(latents).detach() if decode_latents else latents
+
+        model.generate = self_guidance_generate  # type: ignore[assignment]
+
+    def _unwrap_generate_for_self_guidance(self, state: State) -> None:
+        """Restore original ``model.generate`` at EVAL_END."""
+        if self._original_generate is not None:
+            state.model.generate = self._original_generate  # type: ignore[assignment]
+            self._original_generate = None
