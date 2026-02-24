@@ -1,0 +1,21 @@
+# @package _global_
+defaults:
+  - Flux-Baseline
+  - _self_
+
+name: LPIPS
+group: Flux-VAE-Benchmark
+algorithms:
+  repa:
+    _target_: algorithm.repa.REPA
+    lambda_weight: 0.5
+    layer_index: 7
+    encoder: "dinov2_vitl14_reg"
+    compile_encoder: true
+  lpips:
+    _target_: algorithm.lpips.LPIPS
+    lpips_weight: 0.1
+    lpips_net: vgg
+    t_threshold: 1
+
+save_folder: checkpoints/LPIPS
