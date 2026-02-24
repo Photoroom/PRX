@@ -4,6 +4,7 @@ These algorithms add an auxiliary loss that aligns intermediate denoiser feature
 with frozen pretrained encoder (e.g., DINOv3 or DINOv2) representations via a trainable projector.
 """
 
+import logging
 from typing import Any, Callable, Dict, Optional, Tuple
 
 import torch
@@ -14,6 +15,7 @@ from composer.loggers import Logger
 
 from dataset.constants import BatchKeys
 
+log = logging.getLogger(__name__)
 
 IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_DEFAULT_STD = (0.229, 0.224, 0.225)
@@ -44,7 +46,8 @@ class AttentionProjector(nn.Module):
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
-        assert self.head_dim * num_heads == embed_dim, "embed_dim must be divisible by num_heads"
+        if self.head_dim * num_heads != embed_dim:
+            raise ValueError("embed_dim must be divisible by num_heads")
 
         self.theta = theta
 
@@ -65,7 +68,8 @@ class AttentionProjector(nn.Module):
         Returns:
             RoPE embeddings [B, N, dim//2, 2, 2]
         """
-        assert dim % 2 == 0
+        if dim % 2 != 0:
+            raise ValueError("RoPE dimension must be even")
         scale = torch.arange(0, dim, 2, dtype=torch.float64, device=pos.device) / dim
         omega = 1.0 / (theta**scale)
         out = pos.unsqueeze(-1) * omega.unsqueeze(0)  # (B,N,1) * (1,D//2) -> B, N, D//2
@@ -179,9 +183,12 @@ class REPALoss(torch.nn.Module):
         self.encoder = self.build_encoder(encoder) if encoder else None
         if compile_encoder and self.encoder is not None:
             self.encoder = torch.compile(self.encoder)
-        # Shared projector (MLP) - convert to same dtype as encoder
-        self.projector = MLP(denoiser_hidden_dim, self.encoder.hidden_dim).to(torch.bfloat16)
-        self.activations: torch.Tensor = {}
+        self.projector = self._build_projector(denoiser_hidden_dim)
+        self.activations: Optional[torch.Tensor] = None
+
+    def _build_projector(self, denoiser_hidden_dim: int) -> nn.Module:
+        """Build the projector module. Override in subclasses for different projector types."""
+        return MLP(denoiser_hidden_dim, self.encoder.hidden_dim).to(torch.bfloat16)
 
     @property
     def mlp(self) -> nn.Module:
@@ -202,7 +209,8 @@ class REPALoss(torch.nn.Module):
         tread_visible_idx: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if target_feature is None:
-            assert image is not None
+            if image is None:
+                raise ValueError("Either target_feature or image must be provided")
 
             # Use original number of tokens if TREAD is active
             if tread_original_num_tokens is not None:
@@ -258,6 +266,9 @@ class iREPALoss(REPALoss):
         num_attention_heads: int = 4,
         rope_theta: float = 10000.0,
     ):
+        self.use_attention_projector = use_attention_projector
+        self.num_attention_heads = num_attention_heads
+        self.rope_theta = rope_theta
         super().__init__(
             denoiser_hidden_dim=denoiser_hidden_dim,
             lambda_weight=lambda_weight,
@@ -265,17 +276,18 @@ class iREPALoss(REPALoss):
             encoder=encoder,
             compile_encoder=compile_encoder,
         )
-        self.use_attention_projector = use_attention_projector
 
-        if use_attention_projector:  # for TREAD compatibility
-            self.projector = AttentionProjector(
+    def _build_projector(self, denoiser_hidden_dim: int) -> nn.Module:
+        """Build iREPA projector: AttentionProjector for TREAD compatibility or Conv2d."""
+        if self.use_attention_projector:
+            return AttentionProjector(
                 embed_dim=denoiser_hidden_dim,
                 out_dim=self.encoder.hidden_dim,
-                num_heads=num_attention_heads,
-                theta=rope_theta,
+                num_heads=self.num_attention_heads,
+                theta=self.rope_theta,
             ).to(torch.bfloat16)
         else:
-            self.projector = nn.Conv2d(denoiser_hidden_dim, self.encoder.hidden_dim, kernel_size=3, padding=1).to(
+            return nn.Conv2d(denoiser_hidden_dim, self.encoder.hidden_dim, kernel_size=3, padding=1).to(
                 torch.bfloat16
             )
 
@@ -312,9 +324,10 @@ class iREPALoss(REPALoss):
         tread_original_num_tokens: Optional[int] = None,
         tread_visible_idx: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        if target_feature is None:
-            assert image is not None
+        if image is None:
+            raise ValueError("image is required for iREPALoss to infer spatial dimensions")
 
+        if target_feature is None:
             # Use original number of tokens if TREAD is active
             if tread_original_num_tokens is not None:
                 num_denoiser_tokens = tread_original_num_tokens
@@ -457,29 +470,9 @@ class REPA(Algorithm):
             f"{prefix}/compile_encoder": self.compile_encoder,
         }
 
-    def add_new_pipeline_modules(self, model: torch.nn.Module) -> None:
-        """
-        Add REPA MLP module to the model before optimizer creation.
-
-        This method is called from train.py before the optimizer is instantiated,
-        ensuring that the MLP parameters are automatically included in the optimizer.
-
-        Args:
-            model: The pipeline model (will be wrapped by DDP/FSDP later)
-        """
-        if self._modules_added:
-            print(" > REPA: Modules already added, skipping")
-            return
-
-        # Resolve denoiser from model
-        denoiser = model.denoiser
-        denoiser_hidden_dim = denoiser.hidden_size
-
-        print(f" > REPA: Adding MLP module (lambda_weight={self.lambda_weight}, "
-              f"layer_index={self.layer_index}, encoder={self.encoder})")
-
-        # Create REPALoss module with MLP
-        self.repa_loss = REPALoss(
+    def _build_loss_module(self, denoiser_hidden_dim: int) -> REPALoss:
+        """Build the loss module. Override in subclasses for different loss types."""
+        return REPALoss(
             denoiser_hidden_dim=denoiser_hidden_dim,
             lambda_weight=self.lambda_weight,
             layer_index=self.layer_index,
@@ -487,15 +480,39 @@ class REPA(Algorithm):
             compile_encoder=self.compile_encoder,
         )
 
+    def add_new_pipeline_modules(self, model: torch.nn.Module) -> None:
+        """
+        Add projector module to the model before optimizer creation.
+
+        This method is called from train.py before the optimizer is instantiated,
+        ensuring that the projector parameters are automatically included in the optimizer.
+
+        Args:
+            model: The pipeline model (will be wrapped by DDP/FSDP later)
+        """
+        prefix = self._get_log_prefix().upper()
+        if self._modules_added:
+            log.info(f" > {prefix}: Modules already added, skipping")
+            return
+
+        # Resolve denoiser from model
+        denoiser = model.denoiser
+        denoiser_hidden_dim = denoiser.hidden_size
+
+        log.info(f" > {prefix}: Adding projector module (lambda_weight={self.lambda_weight}, "
+              f"layer_index={self.layer_index}, encoder={self.encoder})")
+
+        # Create loss module with projector
+        self.repa_loss = self._build_loss_module(denoiser_hidden_dim)
+
         # Attach to model (not denoiser) to ensure it's accessible for TREAD
-        # Use the same attachment point as the original implementation
         model.repa_loss = self.repa_loss
 
-        # Move to bfloat16 (REPALoss uses bfloat16 internally)
+        # Move to bfloat16 (loss module uses bfloat16 internally)
         self.repa_loss = self.repa_loss.to(dtype=torch.bfloat16)
 
         num_params = sum(p.numel() for p in self.repa_loss.projector.parameters())
-        print(f" > REPA: Added MLP module with {num_params:,} parameters")
+        log.info(f" > {prefix}: Added projector with {num_params:,} parameters")
 
         self._modules_added = True
 
@@ -535,7 +552,7 @@ class REPA(Algorithm):
 
             self.repa_loss = model_unwrapped.repa_loss
 
-            print(self._get_init_message())
+            log.info(self._get_init_message())
 
             # Move to same device as denoiser (dtype already set to bfloat16 in add_new_pipeline_modules)
             device = next(denoiser.parameters()).device
@@ -588,7 +605,7 @@ class REPA(Algorithm):
 
         # Replace the loss method
         state.model.loss = augmented_loss
-        print(" > REPA: Wrapped model.loss() method to inject REPA loss computation")
+        log.info(" > REPA: Wrapped model.loss() method to inject REPA loss computation")
 
 
 class iREPA(REPA):
@@ -669,32 +686,9 @@ class iREPA(REPA):
         })
         return hyperparams
 
-    def add_new_pipeline_modules(self, model: torch.nn.Module) -> None:
-        """
-        Add iREPA projector module to the model before optimizer creation.
-
-        This method is called from train.py before the optimizer is instantiated,
-        ensuring that the projector parameters are automatically included in the optimizer.
-
-        Args:
-            model: The pipeline model (will be wrapped by DDP/FSDP later)
-        """
-        if self._modules_added:
-            print(" > iREPA: Modules already added, skipping")
-            return
-
-        # Resolve denoiser from model
-        denoiser = model.denoiser
-        denoiser_hidden_dim = denoiser.hidden_size
-
-        projector_type = "Attention" if self.use_attention_projector else "Conv2d"
-        print(
-            f" > iREPA: Adding {projector_type} projector module (lambda_weight={self.lambda_weight}, "
-            f"layer_index={self.layer_index}, encoder={self.encoder})"
-        )
-
-        # Create iREPALoss module with projector
-        self.repa_loss = iREPALoss(
+    def _build_loss_module(self, denoiser_hidden_dim: int) -> iREPALoss:
+        """Build iREPALoss module with the appropriate projector type."""
+        return iREPALoss(
             denoiser_hidden_dim=denoiser_hidden_dim,
             lambda_weight=self.lambda_weight,
             layer_index=self.layer_index,
@@ -704,15 +698,4 @@ class iREPA(REPA):
             num_attention_heads=self.num_attention_heads,
             rope_theta=self.rope_theta,
         )
-
-        # Attach to model (not denoiser) to ensure it's accessible for TREAD
-        model.repa_loss = self.repa_loss
-
-        # Move to bfloat16 (iREPALoss uses bfloat16 internally)
-        self.repa_loss = self.repa_loss.to(dtype=torch.bfloat16)
-
-        num_params = sum(p.numel() for p in self.repa_loss.projector.parameters())
-        print(f" > iREPA: Added {projector_type} projector with {num_params:,} parameters")
-
-        self._modules_added = True
 
