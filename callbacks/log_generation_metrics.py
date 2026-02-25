@@ -25,7 +25,7 @@ from torchmetrics.image.fid import FrechetInceptionDistance
 
 from callbacks.feature_extractors import CLIPFeatureExtractor, DINOFeatureExtractor
 from dataset.constants import BatchKeys
-from pipeline.pipeline import LatentDiffusion
+from pipeline.pipeline import Pipeline
 
 _logger = logging.getLogger(__name__)
 
@@ -319,7 +319,7 @@ class LogQualityMetrics(Callback):
         self._per_worker_limit = 0
         self._metric_computation_done = False
 
-    def get_model(self, state: State) -> LatentDiffusion:
+    def get_model(self, state: State) -> Pipeline:
         if isinstance(state.model, DistributedDataParallel):
             return state.model.module
         return state.model
