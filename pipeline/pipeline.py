@@ -1,6 +1,6 @@
 import copy
 from enum import StrEnum, auto
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, TypedDict
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple, TypedDict
 
 import torch
 import torch.nn.functional as F
@@ -588,6 +588,7 @@ class LatentDiffusion(ComposerModel):
         init_latents: torch.Tensor | None = None,
         denoiser: torch.nn.Module | None = None,
         decode_latents: bool = True,
+        guidance_func: Callable[..., torch.Tensor] | None = None,
     ) -> torch.Tensor:
         """Generate images from noise using the diffusion model.
 
@@ -601,6 +602,9 @@ class LatentDiffusion(ComposerModel):
             init_latents: Optional pre-initialized latents
             denoiser: Optional denoiser override (defaults to EMA if active)
             decode_latents: Decode to image space (vs return latents)
+            guidance_func: Optional per-step guidance callback. When provided,
+                replaces the default CFG logic. Signature:
+                ``(denoiser, latent_input, timestep, denoiser_kwargs, guidance_scale) -> model_output``
 
         Returns:
             Generated images or latents
@@ -615,7 +619,7 @@ class LatentDiffusion(ComposerModel):
         latents = self._initialize_latents(batch_size, image_size, init_latents, seed, device)
 
         # 3. Prepare denoiser inputs
-        do_cfg = (guidance_scale > 1.0)
+        do_cfg = guidance_func is None and (guidance_scale > 1.0)
         if BatchKeys.IMAGE_LATENT not in batch:
             batch[BatchKeys.IMAGE_LATENT] = latents
         denoiser_kwargs = self.get_denoiser_kwargs(batch=batch, do_cfg=do_cfg)
@@ -630,21 +634,23 @@ class LatentDiffusion(ComposerModel):
 
         # 5. Denoising loop
         for t in tqdm(self.inference_scheduler.timesteps, disable=not progress_bar):
-            # Prepare input
-            latent_input = torch.cat([latents] * (1 + int(do_cfg)))
-            latent_input = self.inference_scheduler.scale_model_input(latent_input, t)
+            if guidance_func is not None:
+                latent_input = self.inference_scheduler.scale_model_input(latents, t)
+                ts = t.repeat(batch_size).to(device=self.denoiser_device, dtype=self.denoiser_dtype)
+                model_output = guidance_func(denoiser, latent_input, ts, denoiser_kwargs, guidance_scale)
+            else:
+                # Standard CFG: double batch for conditional + unconditional
+                latent_input = torch.cat([latents] * (1 + int(do_cfg)))
+                latent_input = self.inference_scheduler.scale_model_input(latent_input, t)
+                model_output = denoiser(
+                    image_latent=latent_input,
+                    timestep=t.repeat(len(latent_input)).to(device=self.denoiser_device, dtype=self.denoiser_dtype),
+                    **denoiser_kwargs,
+                )
+                if do_cfg:
+                    model_output_uncond, model_output_text = model_output.chunk(2)
+                    model_output = model_output_uncond + guidance_scale * (model_output_text - model_output_uncond)
 
-            # Predict model output
-            model_output = denoiser(
-                image_latent=latent_input,
-                timestep=t.repeat(len(latent_input)).to(device=self.denoiser_device, dtype=self.denoiser_dtype),
-                **denoiser_kwargs,
-            )
-
-            # Apply guidance
-            if do_cfg:
-                model_output_uncond, model_output_text = model_output.chunk(2)
-                model_output = model_output_uncond + guidance_scale * (model_output_text - model_output_uncond)
             # Scheduler step
             latents = self.inference_scheduler.step(model_output, t, latents, generator=None)
         # 6. Decode if requested

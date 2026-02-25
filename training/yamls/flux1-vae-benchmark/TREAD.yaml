@@ -3,7 +3,8 @@ defaults:
   - Flux-Baseline
   - _self_
 
-name: TREAD
+group: Flux-VAE-Benchmark
+name: TREAD_Auto_guidance
 
 algorithms:
   tread:
@@ -14,3 +15,7 @@ algorithms:
     detach: false
     seed: 42
     train_only: true
+    self_guidance: true
+
+trainer:
+  save_folder: checkpoints/TREAD_Auto_guidance

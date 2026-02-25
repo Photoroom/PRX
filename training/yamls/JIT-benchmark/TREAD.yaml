@@ -3,8 +3,10 @@ defaults:
   - JIT-Baseline
   - _self_
 
-name: TREAD
+group: JIT-Benchmark
+name: TREAD_Auto_guidance
 
+eval_first: true
 algorithms:
   tread:
     _target_: algorithm.tread.Tread
@@ -14,3 +16,7 @@ algorithms:
     detach: false
     seed: 42
     train_only: true
+    self_guidance: true
+
+trainer:
+  save_folder: checkpoints/TREAD_Auto_guidance
