@@ -99,7 +99,7 @@ class PerceptualDINO(Algorithm):
     def match(self, event: Event, state: State) -> bool:
         return event == Event.INIT
 
-    def apply(self, event: Event, state: State, logger: Logger) -> None:
+    def apply(self, event: Event, state: State, composer_logger: Logger) -> None:
         model = state.model.module if hasattr(state.model, "module") else state.model
 
         # Guard: P-DINO requires x-prediction mode (denoiser outputs x0, not velocity)
@@ -126,7 +126,7 @@ class PerceptualDINO(Algorithm):
         # Wrap loss
         self._wrap_loss_method(state)
 
-        logger.log_hyperparameters(
+        composer_logger.log_hyperparameters(
             {
                 "pdino/weight": self.pdino_weight,
                 "pdino/encoder": self.encoder_name,
