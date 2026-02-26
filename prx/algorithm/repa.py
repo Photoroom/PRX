@@ -13,7 +13,7 @@ from torch import nn, Tensor
 from composer.core import Algorithm, Event, State
 from composer.loggers import Logger
 
-from dataset.constants import BatchKeys
+from prx.dataset.constants import BatchKeys
 
 log = logging.getLogger(__name__)
 

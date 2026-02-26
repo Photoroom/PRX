@@ -12,8 +12,8 @@ from composer import Callback, Logger, State, TimeUnit
 from composer.utils import dist
 from torch.nn.parallel import DistributedDataParallel
 
-from dataset.constants import BatchKeys
-from pipeline.pipeline import LatentDiffusion
+from prx.dataset.constants import BatchKeys
+from prx.pipeline.pipeline import LatentDiffusion
 
 
 class LogDiffusionImages(Callback):

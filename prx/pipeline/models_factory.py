@@ -5,11 +5,11 @@ import torch
 from composer.devices import DeviceGPU
 from omegaconf import DictConfig, OmegaConf
 
-from models.text_tower import TextTower
-from models.vae_tower import VaeTower
-from models.prx import PRX
+from prx.models.text_tower import TextTower
+from prx.models.vae_tower import VaeTower
+from prx.models.prx import PRX
 
-from schedulers.scheduler import EulerDiscreteScheduler, SchedulerConfig
+from prx.schedulers.scheduler import EulerDiscreteScheduler, SchedulerConfig
 
 from .pipeline import LatentDiffusion
 

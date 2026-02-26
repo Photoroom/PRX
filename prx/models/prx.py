@@ -6,7 +6,7 @@ from omegaconf import DictConfig
 from torch import Tensor, nn
 from torch.nn.functional import fold, unfold
 
-from models.prx_layers import (
+from .prx_layers import (
     EmbedND,  # spellchecker:disable-line
     LastLayer,
     get_image_ids,
