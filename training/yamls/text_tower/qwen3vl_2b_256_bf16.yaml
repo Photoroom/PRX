@@ -1,0 +1,8 @@
+# Qwen3-VL-2B-Instruct Text Tower (256 max length, bf16)
+# Text backbone only (vision encoder discarded after loading), hidden_size=2048
+model_name: Qwen/Qwen3-VL-2B-Instruct
+prompt_max_tokens: 256
+use_attn_mask: true
+use_last_hidden_state: true
+torch_dtype: torch.bfloat16
+skip_text_cleaning: true
