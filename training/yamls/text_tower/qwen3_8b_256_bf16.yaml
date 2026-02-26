@@ -1,0 +1,8 @@
+# Qwen3-8B Text Tower (256 max length, bf16)
+# Decoder-only model, hidden_size=4096, ~16GB VRAM
+model_name: Qwen/Qwen3-8B
+prompt_max_tokens: 256
+use_attn_mask: true
+use_last_hidden_state: true
+torch_dtype: torch.bfloat16
+skip_text_cleaning: true
