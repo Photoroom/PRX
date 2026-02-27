@@ -1,5 +1,6 @@
 import contextlib
-from typing import Any, Callable, Dict, Generator, List, Optional
+from collections.abc import Callable, Generator
+from typing import Any
 
 import torch
 from composer.core import Algorithm, Event, State
@@ -54,7 +55,7 @@ class Tread(Algorithm):
         route_end: int,
         routing_probability: float,
         detach: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         train_only: bool = True,
         self_guidance: bool = False,
     ) -> None:
@@ -71,22 +72,22 @@ class Tread(Algorithm):
         self.self_guidance = bool(self_guidance)
 
         self._enabled: bool = True
-        self._handles: List[Any] = []
+        self._handles: list[Any] = []
         self._hooks_registered: bool = False
         self._active: bool = False
-        self._stash: Dict[str, Tensor] = {}
-        self._visible_pe: Optional[Tensor] = None
-        self._random_generator: Optional[torch.Generator] = None
+        self._stash: dict[str, Tensor] = {}
+        self._visible_pe: Tensor | None = None
+        self._random_generator: torch.Generator | None = None
         self._seed_base: int = int(seed if (seed is not None) else 0)
-        self._step_seed: Optional[int] = None
-        self._blocks: Optional[nn.ModuleList] = None
-        self._denoiser: Optional[nn.Module] = None
-        self._denoiser_hook_handle: Optional[Any] = None
-        self._repa_loss: Optional[nn.Module] = None
-        self._repa_hook_handle: Optional[Any] = None
+        self._step_seed: int | None = None
+        self._blocks: nn.ModuleList | None = None
+        self._denoiser: nn.Module | None = None
+        self._denoiser_hook_handle: Any | None = None
+        self._repa_loss: nn.Module | None = None
+        self._repa_hook_handle: Any | None = None
         # Self-guidance state
-        self._original_generate: Optional[Callable[..., Any]] = None
-        self._guidance_ctx: Optional[Any] = None
+        self._original_generate: Callable[..., Any] | None = None
+        self._guidance_ctx: Any | None = None
 
     def match(self, event: Event, state: State) -> bool:
         if event in (Event.FIT_START, Event.FIT_END):
@@ -161,8 +162,8 @@ class Tread(Algorithm):
         self._visible_pe = None
 
     def _split_positional_encoding(
-        self, pe: Optional[Tensor], routed_idx: Tensor, visible_idx: Tensor
-    ) -> tuple[Optional[Tensor], Optional[Tensor]]:
+        self, pe: Tensor | None, routed_idx: Tensor, visible_idx: Tensor
+    ) -> tuple[Tensor | None, Tensor | None]:
         """
         Split positional encodings into visible and routed subsets based on indices.
 
@@ -194,8 +195,8 @@ class Tread(Algorithm):
         return blocks
 
     def _inject_compute_mask_flag(
-        self, _module: nn.Module, args: tuple[Any, ...], kwargs: Dict[str, Any]
-    ) -> tuple[tuple[Any, ...], Dict[str, Any]]:
+        self, _module: nn.Module, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> tuple[tuple[Any, ...], dict[str, Any]]:
         """
         Inject compute_attn_mask_in_block flag for Flux models when routing will be active.
 
@@ -214,8 +215,8 @@ class Tread(Algorithm):
         return args, kwargs
 
     def _inject_repa_routing_info(
-        self, _module: nn.Module, args: tuple[Any, ...], kwargs: Dict[str, Any]
-    ) -> tuple[tuple[Any, ...], Dict[str, Any]]:
+        self, _module: nn.Module, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> tuple[tuple[Any, ...], dict[str, Any]]:
         """
         Inject routing metadata into REPA's forward kwargs when routing is active.
 
@@ -299,7 +300,7 @@ class Tread(Algorithm):
         num_tokens: int,
         routing_probability: float,
         device: torch.device,
-        generator: Optional[torch.Generator],
+        generator: torch.Generator | None,
     ) -> tuple[Tensor, Tensor]:
         """Sample indices for tokens to route away vs keep visible."""
         if routing_probability <= 0:
@@ -343,8 +344,8 @@ class Tread(Algorithm):
         return torch.gather(pe, 2, expand)
 
     def _pre_route_start(
-        self, _module: nn.Module, args: tuple[Any, ...], kwargs: Dict[str, Any]
-    ) -> tuple[tuple[Any, ...], Dict[str, Any]]:
+        self, _module: nn.Module, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> tuple[tuple[Any, ...], dict[str, Any]]:
         """
         Pre-hook at route_start: sample and split tokens into visible and routed subsets.
 
@@ -364,7 +365,7 @@ class Tread(Algorithm):
             self._reset_routing_state()
 
         img: Tensor = kwargs["img"]
-        pe: Optional[Tensor] = kwargs.get("pe", None)
+        pe: Tensor | None = kwargs.get("pe", None)
         batch_size, num_tokens, hidden_dim = img.shape
 
         self._ensure_generator(img.device)
@@ -429,8 +430,8 @@ class Tread(Algorithm):
         return args, kwargs
 
     def _pre_middle_layers(
-        self, _module: nn.Module, args: tuple[Any, ...], kwargs: Dict[str, Any]
-    ) -> tuple[tuple[Any, ...], Dict[str, Any]]:
+        self, _module: nn.Module, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> tuple[tuple[Any, ...], dict[str, Any]]:
         """Pre-hook for middle layers: ensure visible positional encodings flow through."""
         if not self._enabled or not self._active:
             return args, kwargs
@@ -438,7 +439,7 @@ class Tread(Algorithm):
             kwargs["pe"] = self._visible_pe
         return args, kwargs
 
-    def _post_route_end(self, _module: nn.Module, _args: tuple[Any, ...], _kwargs: Dict[str, Any], output: Any) -> Any:
+    def _post_route_end(self, _module: nn.Module, _args: tuple[Any, ...], _kwargs: dict[str, Any], output: Any) -> Any:
         """
         Post-hook at route_end: reconstruct full image sequence by merging visible and routed tokens.
 
@@ -524,7 +525,7 @@ class Tread(Algorithm):
         and ``torch.compile`` issues.
         """
         blocks = self._get_blocks(denoiser)
-        handles: List[Any] = []
+        handles: list[Any] = []
 
         # Only register new hooks when the inference denoiser has different
         # blocks from the training denoiser (i.e. EMA copy).  When they are the
@@ -576,7 +577,7 @@ class Tread(Algorithm):
 
         def step_fn(
             denoiser: Any, latent_input: Tensor, timestep: Tensor,
-            denoiser_kwargs: Dict, guidance_scale: float,
+            denoiser_kwargs: dict, guidance_scale: float,
         ) -> Tensor:
             routing.disable()
             full_output = denoiser(image_latent=latent_input, timestep=timestep, **denoiser_kwargs)

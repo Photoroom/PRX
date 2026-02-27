@@ -6,7 +6,7 @@ configuration, algorithm registration, and model compilation.
 """
 
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 import hydra
 import streaming
@@ -55,7 +55,7 @@ def train(config: DictConfig) -> None:
         functorch_config.activation_memory_budget = config.activation_memory_budget
 
     # Initialize loggers
-    logger: List[LoggerDestination] = []
+    logger: list[LoggerDestination] = []
     if "logger" in config:
         for log_name, lg_conf in config.logger.items():
             if "_target_" in lg_conf:
@@ -72,7 +72,7 @@ def train(config: DictConfig) -> None:
 
     # Build algorithms before optimizer creation
     # This allows algorithms to add modules to the pipeline before optimization
-    algorithms: List[Algorithm] = []
+    algorithms: list[Algorithm] = []
     if config.get("algorithms", None) is not None:
         for _, ag_conf in config.algorithms.items():
             if "_target_" in ag_conf:
@@ -99,7 +99,7 @@ def train(config: DictConfig) -> None:
     )
 
     # Build callbacks
-    callbacks: List[Callback] = []
+    callbacks: list[Callback] = []
     if "callbacks" in config:
         for _, call_conf in config.callbacks.items():
             if call_conf and "_target_" in call_conf:

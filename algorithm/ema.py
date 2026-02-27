@@ -11,7 +11,8 @@ import os
 import contextlib
 import itertools
 import logging
-from typing import Any, ContextManager, Dict, Optional
+from contextlib import AbstractContextManager
+from typing import Any
 
 import torch
 from torch.distributed.fsdp import FSDPModule
@@ -75,7 +76,7 @@ def compute_ema(model: torch.nn.Module, ema_model: EMAModel, smoothing: float = 
                     ema_params[name].copy_(ema_params[name] * smoothing + param.data * (1.0 - smoothing))
 
 
-def get_model_context_manager(model: torch.nn.Module) -> ContextManager[None]:
+def get_model_context_manager(model: torch.nn.Module) -> AbstractContextManager[None]:
     """Summons full params for FSDP, which is required to update sharded params."""
     fsdp1_enabled = misc.is_model_fsdp(model) and os.environ.get("FSDP_VERSION", "1") == "1"
     model_context_manager = contextlib.nullcontext()
@@ -141,7 +142,7 @@ class EMA(Algorithm):
         self,
         smoothing: float = 0.999,
         ema_start: str = "0.0dur",
-        update_interval: Optional[str] = None,
+        update_interval: str | None = None,
     ):
         self.ema_weights_active = False
         self.ema_started = False
@@ -233,9 +234,9 @@ class EMA(Algorithm):
             # Make sure to have the training weights in the model before saving a checkpoint
             self._ensure_training_weights_active(state)
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self) -> dict[str, Any]:
         """We just store the EMA status, not the EMA weights here."""
-        state_dict: Dict[str, Any] = super().state_dict()
+        state_dict: dict[str, Any] = super().state_dict()
         for attribute_name in self.serialized_attributes:
             state_dict[attribute_name] = getattr(self, attribute_name)
         return state_dict

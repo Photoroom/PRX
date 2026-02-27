@@ -1,6 +1,7 @@
 import copy
 from enum import StrEnum, auto
-from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple, TypedDict
+from collections.abc import Callable
+from typing import Any, NamedTuple, TypedDict
 
 import torch
 import torch.nn.functional as F
@@ -43,7 +44,7 @@ class ForwardOutput(TypedDict, total=False):
     target: torch.Tensor
     timesteps: torch.Tensor
     noised_latents: torch.Tensor
-    generated_images: Dict[float, torch.Tensor]  # Only present in eval_forward
+    generated_images: dict[float, torch.Tensor]  # Only present in eval_forward
 
 
 
@@ -114,11 +115,11 @@ class LatentDiffusion(ComposerModel):
         noise_scheduler: BaseScheduler,
         inference_noise_scheduler: BaseScheduler,
         p_drop_caption: float = 0.1,
-        train_metrics: Optional[List[str]] = None,
-        val_metrics: Optional[List[str]] = None,
+        train_metrics: list[str] | None = None,
+        val_metrics: list[str] | None = None,
         val_seed: int = 1138,
-        val_guidance_scales: Optional[List[float]] = None,
-        loss_bins: Optional[List[Tuple[int, int]]] = None,
+        val_guidance_scales: list[float] | None = None,
+        loss_bins: list[tuple[int, int]] | None = None,
         negative_prompt: str = "",
     ):
         super().__init__()
@@ -172,7 +173,7 @@ class LatentDiffusion(ComposerModel):
     # BATCH PROCESSING (Training & Inference Shared)
     # ============================================================
 
-    def prepare_batch(self, batch: Dict[BatchKeys, Any]) -> Dict[ModelInputs, Any]:
+    def prepare_batch(self, batch: dict[BatchKeys, Any]) -> dict[ModelInputs, Any]:
         """
         Return the right model arguments for the model from the batch.
         Classifier free guidance is not done here.
@@ -185,7 +186,7 @@ class LatentDiffusion(ComposerModel):
         return denoiser_kwargs
 
     @torch.inference_mode()  # type: ignore
-    def get_image_latents(self, batch: Dict[BatchKeys, Any]) -> Dict[ModelInputs, torch.Tensor]:
+    def get_image_latents(self, batch: dict[BatchKeys, Any]) -> dict[ModelInputs, torch.Tensor]:
         """Return the image latent from the batch. Check for precomputed latents first"""
         if BatchKeys.IMAGE_LATENT in batch:
             image_latent = self.scale_image_latent(batch[BatchKeys.IMAGE_LATENT])
@@ -199,20 +200,20 @@ class LatentDiffusion(ComposerModel):
 
         return {ModelInputs.IMAGE_LATENT: image_latent}
 
-    def encode_single_text(self, text: str, device: torch.device) -> Dict[str, Any]:
+    def encode_single_text(self, text: str, device: torch.device) -> dict[str, Any]:
         """Encode a single text string to embeddings.
 
         Note: The text_tower already implements internal caching for efficiency.
         """
         return {k: v.to(device) for k, v in self.text_tower([text]).items()}
 
-    def encode_texts(self, texts: List[str], device: torch.device) -> Dict[str, torch.Tensor]:
+    def encode_texts(self, texts: list[str], device: torch.device) -> dict[str, torch.Tensor]:
         outputs = [self.encode_single_text(text, device) for text in texts]
         # list of dict to dict
         return {key: torch.vstack([i[key] for i in outputs]) for key in outputs[0]}
 
     @torch.no_grad()  # type: ignore
-    def get_text_embedding(self, batch: Dict[BatchKeys, Any]) -> Dict[ModelInputs, torch.Tensor]:
+    def get_text_embedding(self, batch: dict[BatchKeys, Any]) -> dict[ModelInputs, torch.Tensor]:
         """Return the text latent from the batch. Check for precomputed latents first"""
         if BatchKeys.PROMPT_EMBEDDING in batch:
             text_mask = batch.get(BatchKeys.PROMPT_EMBEDDING_MASK) if self.text_tower.use_attn_mask else None
@@ -239,8 +240,8 @@ class LatentDiffusion(ComposerModel):
     # ============================================================
 
     def make_cfg_batch(
-        self, denoiser_kwargs: Dict[ModelInputs, Any], batch: Dict[BatchKeys, Any]
-    ) -> Dict[ModelInputs, Any]:
+        self, denoiser_kwargs: dict[ModelInputs, Any], batch: dict[BatchKeys, Any]
+    ) -> dict[ModelInputs, Any]:
         """
         Method to duplicate all the model arguments to do classifier free guidance.
         All arguments are duplicated except:
@@ -272,8 +273,8 @@ class LatentDiffusion(ComposerModel):
         return denoiser_kwargs
 
     def get_denoiser_kwargs(
-        self, batch: Dict[BatchKeys, Any], do_cfg: bool = False
-    ) -> Dict[ModelInputs, Any]:
+        self, batch: dict[BatchKeys, Any], do_cfg: bool = False
+    ) -> dict[ModelInputs, Any]:
         """Build the denoiser argument from the batch. Shared method for inference and training."""
         denoiser_kwargs = self.prepare_batch(batch)
 
@@ -285,7 +286,7 @@ class LatentDiffusion(ComposerModel):
 
         return denoiser_kwargs
 
-    def random_drop_conditionings(self, denoiser_kwargs: Dict[BatchKeys, Any]) -> Dict[BatchKeys, Any]:
+    def random_drop_conditionings(self, denoiser_kwargs: dict[BatchKeys, Any]) -> dict[BatchKeys, Any]:
         """Randomly drop the conditionings."""
 
         # Inplace
@@ -324,7 +325,7 @@ class LatentDiffusion(ComposerModel):
             compile_model(self.vae.vae.encoder, dynamic=True)
 
 
-    def forward(self, batch: Dict[BatchKeys, Any], use_ema: bool = False) -> ForwardOutput:
+    def forward(self, batch: dict[BatchKeys, Any], use_ema: bool = False) -> ForwardOutput:
         denoiser_kwargs = self.get_denoiser_kwargs(batch)
         latents = denoiser_kwargs.pop(ModelInputs.IMAGE_LATENT)
         # Sample the diffusion timesteps
@@ -352,7 +353,7 @@ class LatentDiffusion(ComposerModel):
         }
     # from "Back to Basics: Let Denoising Generative Models Denoise"
     # https://arxiv.org/abs/2511.13720   
-    def convert_x_to_v(self, prediction: torch.Tensor, target: torch.Tensor, noised_latents: torch.Tensor, timesteps: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def convert_x_to_v(self, prediction: torch.Tensor, target: torch.Tensor, noised_latents: torch.Tensor, timesteps: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Convert x-prediction to v-prediction space"""
         t = timesteps.view(-1, 1, 1, 1)
         t = torch.clamp(t, min=0.05)
@@ -366,7 +367,7 @@ class LatentDiffusion(ComposerModel):
         if "attention_mask" in null_conditioning:
             self.null_prompt_mask = null_conditioning["attention_mask"]
 
-    def drop_text_conditioning(self, model_inputs: Dict[ModelInputs, torch.Tensor]) -> None:
+    def drop_text_conditioning(self, model_inputs: dict[ModelInputs, torch.Tensor]) -> None:
         """
         Drop the text conditioning with probability `p_drop_caption` for each sample in the batch.
         Inplace operation.
@@ -396,7 +397,7 @@ class LatentDiffusion(ComposerModel):
         noise = torch.randn_like(latents)
         return noise
 
-    def loss(self, outputs: Dict[str, torch.Tensor], batch: Dict[BatchKeys, Any]) -> torch.Tensor:
+    def loss(self, outputs: dict[str, torch.Tensor], batch: dict[BatchKeys, Any]) -> torch.Tensor:
         """Loss between denoiser output and added noise, typically mse."""
         loss = F.mse_loss(outputs["prediction"], outputs["target"].clone(), reduction="none")
         loss = loss.mean()
@@ -425,7 +426,7 @@ class LatentDiffusion(ComposerModel):
     # UTILITIES
     # ============================================================
 
-    def get_image_size_from_batch(self, batch: Dict[BatchKeys, Any]) -> ImageSize:
+    def get_image_size_from_batch(self, batch: dict[BatchKeys, Any]) -> ImageSize:
         """Return ImageSize (height, width) from a batch."""
         if BatchKeys.IMAGE in batch:
             shape = batch[BatchKeys.IMAGE].shape[-2:]
@@ -434,7 +435,7 @@ class LatentDiffusion(ComposerModel):
             h, w = batch[BatchKeys.IMAGE_LATENT].shape[-2:]
             return ImageSize(height=int(h * self.vae_scale_factor), width=int(w * self.vae_scale_factor))
 
-    def get_image_latent_size_from_batch(self, batch: Dict[BatchKeys, Any]) -> ImageSize:
+    def get_image_latent_size_from_batch(self, batch: dict[BatchKeys, Any]) -> ImageSize:
         """Return ImageSize (height, width) of image latents from a batch."""
         if BatchKeys.IMAGE_LATENT in batch:
             shape = batch[BatchKeys.IMAGE_LATENT].shape[-2:]
@@ -443,7 +444,7 @@ class LatentDiffusion(ComposerModel):
             h, w = batch[BatchKeys.IMAGE].shape[-2:]
             return ImageSize(height=h // self.vae_scale_factor, width=w // self.vae_scale_factor)
 
-    def get_batch_size_from_batch(self, batch: Dict[BatchKeys, Any]) -> int:
+    def get_batch_size_from_batch(self, batch: dict[BatchKeys, Any]) -> int:
         """Return the batch size from a batch dict."""
         for key in (BatchKeys.IMAGE_LATENT, BatchKeys.IMAGE, BatchKeys.PROMPT):
             if key in batch:
@@ -454,7 +455,7 @@ class LatentDiffusion(ComposerModel):
     # EVALUATION & METRICS
     # ============================================================
 
-    def eval_forward(self, batch: Dict[BatchKeys, Any], outputs: ForwardOutput | None = None) -> ForwardOutput:
+    def eval_forward(self, batch: dict[BatchKeys, Any], outputs: ForwardOutput | None = None) -> ForwardOutput:
         """For stable diffusion, eval forward computes denoiser outputs as well as some samples."""
         # Skip this if outputs have already been computed, e.g. during training
         if outputs is not None:
@@ -481,12 +482,12 @@ class LatentDiffusion(ComposerModel):
         outputs["generated_images"] = generated_images
         return outputs
 
-    def get_metrics(self, is_train: bool = False) -> Dict[str, Metric]:
+    def get_metrics(self, is_train: bool = False) -> dict[str, Metric]:
         if is_train:
             return {metric.__class__.__name__: metric for metric in self.train_metrics}
         return self.val_metrics
 
-    def update_metric(self, batch: Dict[BatchKeys, Any], outputs: Dict[str, Any], metric: Metric) -> None:
+    def update_metric(self, batch: dict[BatchKeys, Any], outputs: dict[str, Any], metric: Metric) -> None:
         """Update MSE metric - either for a specific timestep bin or for all timesteps."""
         if isinstance(metric, MeanSquaredError) and hasattr(metric, "loss_bin"):
             # Update metric for a specific timestep bin
@@ -506,8 +507,8 @@ class LatentDiffusion(ComposerModel):
     def _initialize_latents(
         self,
         batch_size: int,
-        image_size: Tuple[int, int],
-        init_latents: Optional[torch.Tensor],
+        image_size: tuple[int, int],
+        init_latents: torch.Tensor | None,
         seed: int | list[int] | None,
         device: torch.device,
     ) -> torch.Tensor:
@@ -581,8 +582,8 @@ class LatentDiffusion(ComposerModel):
     @torch.no_grad()  # type: ignore
     def generate(
         self,
-        batch: Dict[BatchKeys, Any],
-        image_size: Tuple[int, int],
+        batch: dict[BatchKeys, Any],
+        image_size: tuple[int, int],
         num_inference_steps: int | list[int] = 50,
         guidance_scale: float = 7.0,
         seed: int | list[int] | None = None,

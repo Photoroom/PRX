@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
-
 import torch
 import torch.nn as nn
 
@@ -46,7 +44,7 @@ class BaseScheduler(ABC, nn.Module):
         model_output: torch.Tensor,
         timestep: torch.Tensor,
         sample: torch.Tensor,
-        generator: Optional[torch.Generator] = None,
+        generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Perform one denoising step.
 
@@ -148,7 +146,7 @@ class EulerDiscreteScheduler(BaseScheduler):
 
     def __init__(
         self,
-        config: Optional[SchedulerConfig] = None,
+        config: SchedulerConfig | None = None,
         num_train_timesteps: int = 1000,
         shift: float = 1.0,
     ):
@@ -217,7 +215,7 @@ class EulerDiscreteScheduler(BaseScheduler):
         model_output: torch.Tensor,
         timestep: torch.Tensor,
         sample: torch.Tensor,
-        generator: Optional[torch.Generator] = None,
+        generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Perform one Euler step.
 

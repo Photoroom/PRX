@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import torch
 from torch import Tensor, nn
@@ -60,8 +60,8 @@ class SPRINT(Tread):
         self.learnable_mask = learnable_mask
 
         # Cached refs (set in add_new_pipeline_modules / FIT_START)
-        self._denoiser: Optional[nn.Module] = None
-        self._fuse: Optional[nn.Module] = None
+        self._denoiser: nn.Module | None = None
+        self._fuse: nn.Module | None = None
 
     def add_new_pipeline_modules(self, model: nn.Module) -> None:
         """
@@ -95,8 +95,8 @@ class SPRINT(Tread):
         self._fuse = getattr(denoiser, self.fuse_name)
 
     def _pre_route_start(
-        self, _module: nn.Module, args: tuple[Any, ...], kwargs: Dict[str, Any]
-    ) -> tuple[tuple[Any, ...], Dict[str, Any]]:
+        self, _module: nn.Module, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> tuple[tuple[Any, ...], dict[str, Any]]:
         """
         Pre-hook at route_start:
           - Always stash dense tokens (full sequence) for fusion.
@@ -111,7 +111,7 @@ class SPRINT(Tread):
             self._reset_routing_state()
 
         img: Tensor = kwargs["img"]
-        pe: Optional[Tensor] = kwargs.get("pe", None)
+        pe: Tensor | None = kwargs.get("pe", None)
         batch_size, num_tokens, hidden_dim = img.shape
 
         # Deterministic sampling (same as TREAD)
@@ -156,8 +156,8 @@ class SPRINT(Tread):
         return args, kwargs
 
     def _pre_middle_layers(
-        self, _module: nn.Module, args: tuple[Any, ...], kwargs: Dict[str, Any]
-    ) -> tuple[tuple[Any, ...], Dict[str, Any]]:
+        self, _module: nn.Module, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> tuple[tuple[Any, ...], dict[str, Any]]:
         """
         Pre-hook for middle layers:
         PRX re-supplies the original full `pe` every block call via **block_kwargs,
@@ -171,7 +171,7 @@ class SPRINT(Tread):
 
         return args, kwargs
 
-    def _post_route_end(self, _module: nn.Module, _args: tuple[Any, ...], _kwargs: Dict[str, Any], output: Any) -> Any:
+    def _post_route_end(self, _module: nn.Module, _args: tuple[Any, ...], _kwargs: dict[str, Any], output: Any) -> Any:
         """
         Post-hook at route_end:
           - Build padded deep stream with [MASK] at dropped positions.

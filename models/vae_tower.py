@@ -1,5 +1,3 @@
-from typing import Dict
-
 import torch
 import torch.nn as nn
 from diffusers import AutoencoderDC, AutoencoderKL
@@ -47,7 +45,7 @@ class IdentityVAE(nn.Module):
     def dtype(self) -> torch.dtype:
         return self._device_tracker.dtype
 
-    def encode(self, image: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def encode(self, image: torch.Tensor) -> dict[str, torch.Tensor]:
         """Encode image - returns identity."""
         return {"latent": image}
 

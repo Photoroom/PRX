@@ -1,6 +1,6 @@
 import importlib
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import torch
 
@@ -23,8 +23,8 @@ def _resolve_class(target: str):
 
 def _collect_trainable(
     model: torch.nn.Module,
-    parameter_name_filter: Optional[List[str]] = None,
-    parameter_freeze_name_filter: Optional[List[str]] = None,
+    parameter_name_filter: list[str] | None = None,
+    parameter_freeze_name_filter: list[str] | None = None,
 ) -> list[tuple[str, torch.nn.Parameter]]:
     """Return ``(name, param)`` pairs for all trainable parameters."""
 
@@ -54,8 +54,8 @@ def _collect_trainable(
 def create_standard_optimizer(
     model: torch.nn.Module,
     optimizer_class: str,
-    parameter_name_filter: Optional[List[str]] = None,
-    parameter_freeze_name_filter: Optional[List[str]] = None,
+    parameter_name_filter: list[str] | None = None,
+    parameter_freeze_name_filter: list[str] | None = None,
     **kwargs: Any,
 ) -> torch.optim.Optimizer:
     """Create a standard PyTorch optimizer.
@@ -82,11 +82,11 @@ def create_standard_optimizer(
 
 def create_muon_optimizer(
     model: torch.nn.Module,
-    muon_config: Dict[str, Any],
-    adam_config: Dict[str, Any],
+    muon_config: dict[str, Any],
+    adam_config: dict[str, Any],
     muon_name_filter: str = "blocks",
-    parameter_name_filter: Optional[List[str]] = None,
-    parameter_freeze_name_filter: Optional[List[str]] = None,
+    parameter_name_filter: list[str] | None = None,
+    parameter_freeze_name_filter: list[str] | None = None,
     **_kwargs: Any,
 ) -> torch.optim.Optimizer:
     """Create a ``muon_fsdp2.Muon`` optimizer with param group splitting.

@@ -8,7 +8,7 @@ before the x-to-v conversion, then computes LPIPS in the wrapped loss method.
 """
 
 import logging
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 import lpips
 import torch
@@ -50,8 +50,8 @@ class LPIPS(Algorithm):
                 f"LPIPS: both crop_size={crop_size} and resize_factor={resize_factor} are set. "
                 "Only cropping will be applied; resize_factor is ignored."
             )
-        self.lpips_fn: Optional[lpips.LPIPS] = None
-        self._stashed_x0_pred: Optional[torch.Tensor] = None
+        self.lpips_fn: lpips.LPIPS | None = None
+        self._stashed_x0_pred: torch.Tensor | None = None
         self._modules_added = False
 
     def add_new_pipeline_modules(self, model: torch.nn.Module) -> None:
@@ -119,7 +119,7 @@ class LPIPS(Algorithm):
         algo = self
         composer_model = state.model
 
-        def augmented_loss(outputs: Dict[str, torch.Tensor], batch: Dict[str, Any]) -> torch.Tensor:
+        def augmented_loss(outputs: dict[str, torch.Tensor], batch: dict[str, Any]) -> torch.Tensor:
             base_loss = original_loss_fn(outputs, batch)
 
             t = outputs["timesteps"]  # [B]

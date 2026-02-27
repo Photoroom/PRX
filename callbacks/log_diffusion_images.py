@@ -5,7 +5,7 @@
 
 import itertools
 import random
-from typing import Any, List, Optional, Union
+from typing import Any
 
 import torch
 from composer import Callback, Logger, State, TimeUnit
@@ -23,8 +23,8 @@ class LogDiffusionImages(Callback):
     the end of an evaluation batch.
 
     Args:
-        prompt (str or List[str]): The prompt or prompts to guide the image generation.
-        negative_prompt (str or List[str]): The prompt or prompts to guide the image generation away from.
+        prompt (str or list[str]): The prompt or prompts to guide the image generation.
+        negative_prompt (str or list[str]): The prompt or prompts to guide the image generation away from.
         guidance_scale (float, optional): guidance_scale is defined as w of equation 2
             of the Imagen Paper. Guidance scale is enabled by setting guidance_scale > 1.
             A larger guidance scale generates images that are more aligned to
@@ -34,28 +34,28 @@ class LogDiffusionImages(Callback):
         seed (int, optional): Random seed to use for generation. Set a seed for reproducible generation.
             Default: `None`.
         num_inference_steps (int): Number of inference steps for the default denoiser. Default: ``50``.
-        extra_denoisers_num_inference_steps (List[int], optional): Number of inference steps for each extra denoiser in
+        extra_denoisers_num_inference_steps (list[int], optional): Number of inference steps for each extra denoiser in
             ``extra_denoiser_names`` (same order). If not provided, extra denoisers use ``num_inference_steps``.
             If provided, its length must equal ``len(extra_denoiser_names)``.
-        extra_denoisers_guidance_scales (List[float], optional): Guidance scales for each extra denoiser in
+        extra_denoisers_guidance_scales (list[float], optional): Guidance scales for each extra denoiser in
             ``extra_denoiser_names`` (same order). If not provided, extra denoisers use ``guidance_scale``.
             If provided, its length must equal ``len(extra_denoiser_names)``.
-        extra_denoiser_names (List[str], optional): Additional model attribute names of denoisers to generate with
+        extra_denoiser_names (list[str], optional): Additional model attribute names of denoisers to generate with
             (e.g. ["denoiser_teacher"]). Each will be run in addition to the default model denoiser and
             logged using its attribute name as the prefix. Default: ``None``.
     """
 
     def __init__(
         self,
-        prompt: Union[str, List[str]],
-        negative_prompt: Optional[Union[str, List[str]]] = None,
+        prompt: str | list[str],
+        negative_prompt: str | list[str] | None = None,
         guidance_scale: float = 1.0,
         size: int = 256,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         num_inference_steps: int = 50,  # TODO move into a model inference config
-        extra_denoiser_names: Optional[List[str]] = None,
-        extra_denoisers_num_inference_steps: Optional[List[int]] = None,
-        extra_denoisers_guidance_scales: Optional[List[float]] = None,
+        extra_denoiser_names: list[str] | None = None,
+        extra_denoisers_num_inference_steps: list[int] | None = None,
+        extra_denoisers_guidance_scales: list[float] | None = None,
         **generate_kwargs: Any,
     ):
         prompt = [prompt] if isinstance(prompt, str) else prompt
@@ -119,7 +119,7 @@ class LogDiffusionImages(Callback):
             extra_count = len(self.extra_denoiser_names)
             default_steps = self.num_inference_steps
             if self.extra_denoisers_num_inference_steps is None:
-                extra_steps: List[int] = [default_steps] * extra_count
+                extra_steps: list[int] = [default_steps] * extra_count
             else:
                 if len(self.extra_denoisers_num_inference_steps) != extra_count:
                     raise ValueError(
@@ -129,7 +129,7 @@ class LogDiffusionImages(Callback):
 
             default_guidance = self.guidance_scale
             if self.extra_denoisers_guidance_scales is None:
-                extra_guidance: List[float] = [default_guidance] * extra_count
+                extra_guidance: list[float] = [default_guidance] * extra_count
             else:
                 if len(self.extra_denoisers_guidance_scales) != extra_count:
                     raise ValueError(
@@ -147,7 +147,7 @@ class LogDiffusionImages(Callback):
             # For each denoiser spec, generate and log
             for idx, (name_prefix, denoiser) in enumerate(denoiser_specs):
                 # Generate images for assigned prompts
-                gen_images: List[torch.Tensor] = []
+                gen_images: list[torch.Tensor] = []
                 for i, (p, np) in enumerate(zip(gpu_prompts, gpu_neg_prompts)):
                     batch = {
                         BatchKeys.PROMPT: [p],

@@ -7,7 +7,7 @@ Loss: L_P-DINO = (1/|P|) * sum_{p in P} (1 - cos(f^p_DINO(x0_pred), f^p_DINO(x0_
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -76,8 +76,8 @@ class PerceptualDINO(Algorithm):
         self.t_threshold = t_threshold
         self.resize_resolution = resize_resolution
         self.crop_size = crop_size
-        self.encoder: Optional[PDINOEncoder] = None
-        self._stashed_x0_pred: Optional[torch.Tensor] = None
+        self.encoder: PDINOEncoder | None = None
+        self._stashed_x0_pred: torch.Tensor | None = None
         self._modules_added = False
 
     def add_new_pipeline_modules(self, model: torch.nn.Module) -> None:
@@ -147,7 +147,7 @@ class PerceptualDINO(Algorithm):
         crop_size = self.crop_size
         algo = self
 
-        def augmented_loss(outputs: Dict[str, torch.Tensor], batch: Dict[str, Any]) -> torch.Tensor:
+        def augmented_loss(outputs: dict[str, torch.Tensor], batch: dict[str, Any]) -> torch.Tensor:
             base_loss = original_loss_fn(outputs, batch)
 
             t = outputs["timesteps"]  # [B]

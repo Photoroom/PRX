@@ -1,7 +1,8 @@
 import json
 import os
 import warnings
-from typing import Any, List, Optional, Union, Sequence, Iterator, Tuple, Callable, Dict
+from collections.abc import Callable, Iterator, Sequence
+from typing import Any
 
 
 from torch.utils.data import DataLoader
@@ -31,7 +32,7 @@ def get_nb_samples_in_stream(index_file: str) -> int:
     return total_samples
 
 
-def get_split_folders(path: str, file_name: str = INDEX_FILE) -> List[str]:
+def get_split_folders(path: str, file_name: str = INDEX_FILE) -> list[str]:
     """Get list of folders containing the specified index file.
 
     Args:
@@ -55,10 +56,10 @@ def get_split_folders(path: str, file_name: str = INDEX_FILE) -> List[str]:
 
 
 def get_stream_iterator(
-    local: Union[str, List[str]],
-    remote: Optional[Union[str, List[str]]],
-    proportions: Optional[Union[float, List[float]]],
-) -> Iterator[Tuple[Optional[str], str, str, Optional[float]]]:
+    local: str | list[str],
+    remote: str | list[str] | None,
+    proportions: float | list[float] | None,
+) -> Iterator[tuple[str | None, str, str, float | None]]:
     """Get iterator over (remote, local, index_file, proportion) tuples."""
     if remote is None:
         return get_local_iterator(local, proportions)
@@ -69,9 +70,9 @@ def get_stream_iterator(
 
 
 def get_local_iterator(
-    local_paths: Union[str, List[str]],
-    proportions: Optional[Union[float, List[float]]]
-) -> Iterator[Tuple[Optional[str], str, str, Optional[float]]]:
+    local_paths: str | list[str],
+    proportions: float | list[float] | None
+) -> Iterator[tuple[str | None, str, str, float | None]]:
     """Iterate over local dataset paths."""
     if isinstance(local_paths, str):
         local_paths = [local_paths]
@@ -106,9 +107,9 @@ def get_local_iterator(
 
 
 def get_remote_iterator(
-    remote_paths: Union[str, List[str]],
-    local_paths: Union[str, List[str]]
-) -> Iterator[Tuple[str, str, str, None]]:
+    remote_paths: str | list[str],
+    local_paths: str | list[str]
+) -> Iterator[tuple[str, str, str, None]]:
     """Iterate over remote dataset paths with local cache."""
     # Normalize to lists
     if isinstance(remote_paths, str) and isinstance(local_paths, str):
@@ -143,7 +144,7 @@ def get_remote_iterator(
             yield remote, local, INDEX_FILE, None
 
 
-def split_proportion(proportion: Optional[float], items: List[Any]) -> List[Optional[float]]:
+def split_proportion(proportion: float | None, items: list[Any]) -> list[float | None]:
     """Split a proportion across multiple items based on their sample counts."""
     if proportion is None:
         return [None] * len(items)
@@ -165,7 +166,7 @@ class PatchedStream(Stream):
         super().__init__(*args, **kwargs)
         self.index_file = index_file
 
-    def get_shards(self, world: World, allow_unsafe_types: bool) -> List[Reader]:
+    def get_shards(self, world: World, allow_unsafe_types: bool) -> list[Reader]:
         """Load this Stream's index, retrieving its shard readers.
 
         Args:
@@ -175,7 +176,7 @@ class PatchedStream(Stream):
                 error.
 
         Returns:
-            `List[Reader]: Shard readers.
+            `list[Reader]: Shard readers.
         """
         basename = self.index_file
         filepath = os.path.join(self.local, self.split, basename)  # pyright: ignore
@@ -263,27 +264,27 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
 
     def __init__(
         self,
-        local: Union[str, List[str]],
-        remote: Optional[Union[str, List[str]]] = None,
-        caption_keys: Union[str, List[str], List[Tuple[str, float]]] = "caption",
+        local: str | list[str],
+        remote: str | list[str] | None = None,
+        caption_keys: str | list[str] | list[tuple[str, float]] = "caption",
         text_tower: str = "t5gemma2b-256-bf16",
         prompt_max_tokens: int = 256,
         download_retry: int = 2,
         download_timeout: float = 120,
-        predownload: Optional[int] = None,
+        predownload: int | None = None,
         cache_limit: str = "1tb",
-        num_canonical_nodes: Optional[int] = None,
-        batch_size: Optional[int] = None,
+        num_canonical_nodes: int | None = None,
+        batch_size: int | None = None,
         shuffle: bool = False,
         shuffle_seed: int = 9146,
-        proportions: Optional[Union[float, List[float]]] = None,
+        proportions: float | list[float] | None = None,
         has_text_latents: bool = True,
         has_mask_text_latents: bool = False,
         batching_method: str = "per_stream",
-        transforms: Optional[List[Callable]] = None,
-        transforms_targets: Union[List[str], str] = DEFAULT_DATA_AUG_TARGETS,
+        transforms: list[Callable] | None = None,
+        transforms_targets: list[str] | str = DEFAULT_DATA_AUG_TARGETS,
         drop_last: bool = True,
-        prefetch_factor: Optional[int] = None,
+        prefetch_factor: int | None = None,
         num_workers: int = 0,
         persistent_workers: bool = False,
         pin_memory: bool = False,
@@ -356,10 +357,10 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
             logger.info(f"  Stream {i}: {location}/{index} - {n_samples} samples")
         logger.info("-" * 23)
 
-    def __getitem__(self, index: int) -> Optional[Dict[BatchKeys, Any]]:
+    def __getitem__(self, index: int) -> dict[BatchKeys, Any] | None:
         return ProcessedDataset.__getitem__(self, index)
 
-    def _get_raw_item(self, index: int) -> Dict[str, Any]:
+    def _get_raw_item(self, index: int) -> dict[str, Any]:
         return StreamingDataset.__getitem__(self, index)
 
     def _get_sampler(self, shuffle: bool) -> None:

@@ -12,7 +12,7 @@ CMMD here matches sayakpaul/cmmd-pytorch's distance.py:
 import logging
 import re
 from dataclasses import dataclass
-from typing import Dict, Optional, Sequence, Union
+from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
@@ -86,7 +86,7 @@ def _cmmd_distance(
     return x.new_tensor(scale) * (k_xx + k_yy - 2.0 * k_xy)
 
 
-def _gather_cat_to_rank0(t: torch.Tensor) -> Optional[torch.Tensor]:
+def _gather_cat_to_rank0(t: torch.Tensor) -> torch.Tensor | None:
     """Gather variable-length 2D tensors (N_i, D) from all ranks to rank 0 and concatenate."""
     if not (torch.distributed.is_available() and torch.distributed.is_initialized()):
         return t
@@ -220,7 +220,7 @@ class _Frequency:
     unit: TimeUnit  # BA, EP, or SP
 
     @classmethod
-    def from_input(cls, x: Union[int, str]) -> "_Frequency":
+    def from_input(cls, x: int | str) -> "_Frequency":
         if isinstance(x, int):
             return cls(x, TimeUnit.BATCH)
 
@@ -245,8 +245,8 @@ class LogQualityMetrics(Callback):
     scales.
 
     Attributes:
-        frequency (Union[int, str]): How often to compute metrics (e.g. '1ep', '1000ba').
-        guidance_scales (List[float]): Guidance scale values to use for evaluation.
+        frequency (int | str): How often to compute metrics (e.g. '1ep', '1000ba').
+        guidance_scales (list[float]): Guidance scale values to use for evaluation.
         seed (int): Random seed for evaluation sample generation.
         num_inference_steps (int): Number of inference steps for sampling.
         max_samples (int): Maximum number of samples to use for metric computation.
@@ -270,7 +270,7 @@ class LogQualityMetrics(Callback):
 
     def __init__(
         self,
-        frequency: Union[int, str] = "1ep",
+        frequency: int | str = "1ep",
         guidance_scales: Sequence[float] = (3.5,),
         seed: int = 1138,
         num_inference_steps: int = 28,
@@ -308,11 +308,11 @@ class LogQualityMetrics(Callback):
         self.clip_use_pil = bool(clip_use_pil)
         self.store_feats_on_cpu = bool(store_feats_on_cpu)
 
-        self.metrics: Optional[Dict[str, Dict[float, Metric]]] = None
+        self.metrics: dict[str, dict[float, Metric]] | None = None
         self._metrics_initialized = False
 
-        self.clip_extractor: Optional[CLIPFeatureExtractor] = None
-        self.dino_extractor: Optional[DINOFeatureExtractor] = None
+        self.clip_extractor: CLIPFeatureExtractor | None = None
+        self.dino_extractor: DINOFeatureExtractor | None = None
 
         self._run_this_eval = False
         self._samples_processed = 0

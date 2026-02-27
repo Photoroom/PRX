@@ -5,7 +5,7 @@ predictions that are different from the predictions for other samples in the bat
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -75,7 +75,7 @@ class ContrastiveFlowMatching(Algorithm):
         original_loss_fn = state.model.loss
         lambda_weight = self.lambda_weight
 
-        def augmented_loss(outputs: Dict[str, torch.Tensor], batch: Dict[BatchKeys, Any]) -> torch.Tensor:
+        def augmented_loss(outputs: dict[str, torch.Tensor], batch: dict[BatchKeys, Any]) -> torch.Tensor:
             # Compute base loss (MSE)
             base_loss = original_loss_fn(outputs, batch)
 

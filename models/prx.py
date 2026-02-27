@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 import torch
 from omegaconf import DictConfig
@@ -99,7 +99,7 @@ class PRX(nn.Module):
         self.hidden_size = params.hidden_size
         self.num_heads = params.num_heads
 
-    def __init__(self, params: PRXParams | Dict[str, Any] | None = None, **kwargs: Any):
+    def __init__(self, params: PRXParams | dict[str, Any] | None = None, **kwargs: Any):
         super().__init__()
 
         if params is None:
@@ -180,9 +180,9 @@ class PRX(nn.Module):
         self,
         image_latent: Tensor,
         prompt_embeds: Tensor,
-        timestep: Optional[Tensor] = None,
-        time_embedding: Optional[Tensor] = None,
-        attention_mask: Optional[Tensor] = None,
+        timestep: Tensor | None = None,
+        time_embedding: Tensor | None = None,
+        attention_mask: Tensor | None = None,
         **block_kwargs: Any,
     ) -> Tensor:
         img = self.img_in(image_latent)

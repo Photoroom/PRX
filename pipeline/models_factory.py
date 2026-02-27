@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Any, NamedTuple
 
 import torch
 from composer.devices import DeviceGPU
@@ -29,7 +29,7 @@ def wrap_fsdp_module(module: torch.nn.Module, value: bool) -> None:
 
 
 
-def resolve_torch_dtype(dtype: Union[str, torch.dtype, None]) -> Optional[torch.dtype]:
+def resolve_torch_dtype(dtype: str | torch.dtype | None) -> torch.dtype | None:
     if dtype is None:
         return None
 
@@ -53,7 +53,7 @@ def resolve_torch_dtype(dtype: Union[str, torch.dtype, None]) -> Optional[torch.
     raise ValueError(f"Unsupported dtype: {dtype}. Supported: {list(dtype_map.keys())}")
 
 
-def build_schedulers(scheduler_config: Dict[str, Any]) -> Schedulers:
+def build_schedulers(scheduler_config: dict[str, Any]) -> Schedulers:
     """Build training and inference noise schedulers.
 
     Args:
@@ -82,26 +82,26 @@ def _get_device() -> torch.device:
 
 def build_pipeline(
     # Component configs (from Hydra config groups)
-    denoiser_config: Dict[str, Any],
-    text_tower_config: Dict[str, Any],
-    vae_config: Dict[str, Any],
-    scheduler_config: Dict[str, Any],
+    denoiser_config: dict[str, Any],
+    text_tower_config: dict[str, Any],
+    vae_config: dict[str, Any],
+    scheduler_config: dict[str, Any],
 
     # Pipeline settings
     input_size: int = 512,
     p_drop_caption: float = 0.1,
 
     # Metrics and validation
-    train_metrics: Optional[List[Any]] = None,
-    val_metrics: Optional[List[Any]] = None,
-    val_guidance_scales: Optional[List[float]] = None,
+    train_metrics: list[Any] | None = None,
+    val_metrics: list[Any] | None = None,
+    val_guidance_scales: list[float] | None = None,
     val_seed: int = 1138,
-    loss_bins: Optional[List[Tuple[float, float]]] = None,
+    loss_bins: list[tuple[float, float]] | None = None,
     negative_prompt: str = "",
 
     # Optional overrides
-    latent_channels: Optional[int] = None,
-    denoiser_dtype: Optional[Union[str, torch.dtype]] = None,
+    latent_channels: int | None = None,
+    denoiser_dtype: str | torch.dtype | None = None,
 
     **kwargs: Any,
 ) -> LatentDiffusion:

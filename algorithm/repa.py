@@ -5,7 +5,8 @@ with frozen pretrained encoder (e.g., DINOv3 or DINOv2) representations via a tr
 """
 
 import logging
-from typing import Any, Callable, Dict, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 import torch
 import torchvision
@@ -184,7 +185,7 @@ class REPALoss(torch.nn.Module):
         if compile_encoder and self.encoder is not None:
             self.encoder = torch.compile(self.encoder)
         self.projector = self._build_projector(denoiser_hidden_dim)
-        self.activations: Optional[torch.Tensor] = None
+        self.activations: torch.Tensor | None = None
 
     def _build_projector(self, denoiser_hidden_dim: int) -> nn.Module:
         """Build the projector module. Override in subclasses for different projector types."""
@@ -203,10 +204,10 @@ class REPALoss(torch.nn.Module):
 
     def forward(
         self,
-        target_feature: Optional[torch.Tensor] = None,
-        image: Optional[torch.Tensor] = None,
-        tread_original_num_tokens: Optional[int] = None,
-        tread_visible_idx: Optional[torch.Tensor] = None,
+        target_feature: torch.Tensor | None = None,
+        image: torch.Tensor | None = None,
+        tread_original_num_tokens: int | None = None,
+        tread_visible_idx: torch.Tensor | None = None,
     ) -> torch.Tensor:
         if target_feature is None:
             if image is None:
@@ -294,9 +295,9 @@ class iREPALoss(REPALoss):
     def _infer_spatial_dimensions(
         self,
         image: torch.Tensor,
-        tread_original_num_tokens: Optional[int],
+        tread_original_num_tokens: int | None,
         current_num_tokens: int,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """Infer original spatial dimensions (H, W) in token space.
 
         Args:
@@ -319,10 +320,10 @@ class iREPALoss(REPALoss):
 
     def forward(
         self,
-        target_feature: Optional[torch.Tensor] = None,
-        image: Optional[torch.Tensor] = None,
-        tread_original_num_tokens: Optional[int] = None,
-        tread_visible_idx: Optional[torch.Tensor] = None,
+        target_feature: torch.Tensor | None = None,
+        image: torch.Tensor | None = None,
+        tread_original_num_tokens: int | None = None,
+        tread_visible_idx: torch.Tensor | None = None,
     ) -> torch.Tensor:
         if image is None:
             raise ValueError("image is required for iREPALoss to infer spatial dimensions")
@@ -445,7 +446,7 @@ class REPA(Algorithm):
         self.layer_index = layer_index
         self.encoder = encoder
         self.compile_encoder = compile_encoder
-        self.repa_loss: Optional[REPALoss] = None
+        self.repa_loss: REPALoss | None = None
         self._hooks_registered = False
         self._modules_added = False
 
@@ -460,7 +461,7 @@ class REPA(Algorithm):
             f"layer_index={self.layer_index}, encoder={self.encoder})"
         )
 
-    def _get_hyperparameters(self) -> Dict[str, Any]:
+    def _get_hyperparameters(self) -> dict[str, Any]:
         """Return hyperparameters to log."""
         prefix = self._get_log_prefix()
         return {
@@ -586,7 +587,7 @@ class REPA(Algorithm):
         original_loss_fn = state.model.loss
         repa_loss_module = self.repa_loss
 
-        def augmented_loss(outputs: Dict[str, torch.Tensor], batch: Dict[BatchKeys, Any]) -> torch.Tensor:
+        def augmented_loss(outputs: dict[str, torch.Tensor], batch: dict[BatchKeys, Any]) -> torch.Tensor:
             # Compute base loss (MSE + contrastive if enabled)
             base_loss = original_loss_fn(outputs, batch)
 
@@ -673,7 +674,7 @@ class iREPA(REPA):
             f"layer_index={self.layer_index}, encoder={self.encoder}, projector={projector_type})"
         )
 
-    def _get_hyperparameters(self) -> Dict[str, Any]:
+    def _get_hyperparameters(self) -> dict[str, Any]:
         """Return hyperparameters to log, including iREPA-specific params."""
         # Get base hyperparameters from parent
         hyperparams = super()._get_hyperparameters()

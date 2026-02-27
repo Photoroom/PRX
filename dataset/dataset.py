@@ -1,8 +1,8 @@
 import logging
 import random
 import string
-from collections.abc import Sequence
-from typing import Any, Callable, Dict, List, NamedTuple, Optional, Union, cast
+from collections.abc import Callable, Sequence
+from typing import Any, NamedTuple, cast
 
 import numpy as np
 import torch
@@ -26,11 +26,7 @@ DEFAULT_VAE_SPATIAL_SCALE_FACTOR = 8
 # Caption Handling
 # ============================================================================
 
-CaptionKeys = Union[
-    str,
-    Sequence[str],
-    Sequence[tuple[str, float]],
-]
+CaptionKeys = str | Sequence[str] | Sequence[tuple[str, float]]
 
 
 class CaptionKeyAndWeight(NamedTuple):
@@ -69,13 +65,13 @@ class CaptionSelector:
         self.has_mask_text_latents = has_mask_text_latents
         self.text_tower_name = text_tower_name
 
-    def get_valid_captions(self, sample: Dict[str, Any]) -> list[CaptionKeyAndWeight]:
+    def get_valid_captions(self, sample: dict[str, Any]) -> list[CaptionKeyAndWeight]:
         """Return list of valid CaptionKeyAndWeight tuples for this sample."""
         if self.has_text_latents:
             return self._get_valid_latent_captions(sample)
         return self._get_valid_text_captions(sample)
 
-    def _get_valid_latent_captions(self, sample: Dict[str, Any]) -> list[CaptionKeyAndWeight]:
+    def _get_valid_latent_captions(self, sample: dict[str, Any]) -> list[CaptionKeyAndWeight]:
         """Get valid captions with precomputed latents."""
         valid = []
         for key, weight in self.caption_keys_and_weights:
@@ -100,7 +96,7 @@ class CaptionSelector:
 
         return valid
 
-    def _get_valid_text_captions(self, sample: Dict[str, Any]) -> list[CaptionKeyAndWeight]:
+    def _get_valid_text_captions(self, sample: dict[str, Any]) -> list[CaptionKeyAndWeight]:
         """Get valid text captions (no latents)."""
         valid = []
         for key, weight in self.caption_keys_and_weights:
@@ -114,7 +110,7 @@ class CaptionSelector:
 
         return valid
 
-    def select_caption(self, sample: Dict[str, Any]) -> str:
+    def select_caption(self, sample: dict[str, Any]) -> str:
         """Select a random caption weighted by configured weights."""
         valid_captions = self.get_valid_captions(sample)
         if not valid_captions:
@@ -155,8 +151,8 @@ class SampleProcessor:
         has_text_latents: bool,
         has_mask_text_latents: bool,
         prompt_max_tokens: int = 256,
-        transforms: Optional[List[Callable]] = None,
-        transform_targets: List[str] = None,
+        transforms: list[Callable] | None = None,
+        transform_targets: list[str] = None,
     ):
         self.caption_selector = caption_selector
         self.text_tower_name = text_tower_name
@@ -166,7 +162,7 @@ class SampleProcessor:
         self.transforms = transforms or []
         self.transform_targets = transform_targets or DEFAULT_DATA_AUG_TARGETS
 
-    def process(self, raw_sample: Dict[str, Any]) -> Dict[BatchKeys, Any]:
+    def process(self, raw_sample: dict[str, Any]) -> dict[BatchKeys, Any]:
         """Process raw sample into model input format."""
         # Clean up invalid values
         sample = self._remove_invalid_values(raw_sample)
@@ -192,7 +188,7 @@ class SampleProcessor:
 
         return output
 
-    def _remove_invalid_values(self, sample: Dict[str, Any]) -> Dict[str, Any]:
+    def _remove_invalid_values(self, sample: dict[str, Any]) -> dict[str, Any]:
         """Remove entries with NaN values."""
         def is_valid(value: Any) -> bool:
             if isinstance(value, np.ndarray):
@@ -203,7 +199,7 @@ class SampleProcessor:
 
         return {k: v for k, v in sample.items() if is_valid(v)}
 
-    def _apply_transforms(self, sample: Dict[str, Any], caption_key: str) -> Dict[str, Any]:
+    def _apply_transforms(self, sample: dict[str, Any], caption_key: str) -> dict[str, Any]:
         """Apply augmentation transforms to images."""
         # Convert images to tensors
         images = {}
@@ -228,7 +224,7 @@ class SampleProcessor:
 
         return sample
 
-    def _add_image_data(self, sample: Dict[str, Any], output: Dict[BatchKeys, Any]) -> None:
+    def _add_image_data(self, sample: dict[str, Any], output: dict[BatchKeys, Any]) -> None:
         """Add image or latent to output."""
         # Try to use precomputed latent if available
         if "img_latent" in sample:
@@ -240,7 +236,7 @@ class SampleProcessor:
         if "image" in sample:
             output[BatchKeys.IMAGE] = image_to_tensor(sample["image"])
 
-    def _add_text_data(self, sample: Dict[str, Any], caption_key: str, output: Dict[BatchKeys, Any]) -> None:
+    def _add_text_data(self, sample: dict[str, Any], caption_key: str, output: dict[BatchKeys, Any]) -> None:
         """Add text prompt and embeddings to output."""
         output[BatchKeys.CAPTION_KEY] = caption_key
         output[BatchKeys.PROMPT] = sample[caption_key]
@@ -281,7 +277,7 @@ class SampleProcessor:
             padding = torch.zeros((padding_len, latent.shape[1]), dtype=torch.float32)
             output[BatchKeys.PROMPT_EMBEDDING] = torch.cat([latent, padding], dim=0)
 
-    def _add_metadata(self, sample: Dict[str, Any], output: Dict[BatchKeys, Any]) -> None:
+    def _add_metadata(self, sample: dict[str, Any], output: dict[BatchKeys, Any]) -> None:
         """Add resolution metadata."""
         # Get image size
         if BatchKeys.IMAGE in output:
@@ -310,8 +306,8 @@ class ProcessedDataset:
         prompt_max_tokens: int = 256,
         has_text_latents: bool = True,
         has_mask_text_latents: bool = True,
-        transforms: Optional[List[Callable]] = None,
-        transforms_targets: Union[List[str], str] = DEFAULT_DATA_AUG_TARGETS,
+        transforms: list[Callable] | None = None,
+        transforms_targets: list[str] | str = DEFAULT_DATA_AUG_TARGETS,
     ):
         self.text_tower_name = text_tower
         self.prompt_max_tokens = prompt_max_tokens
@@ -337,7 +333,7 @@ class ProcessedDataset:
             transform_targets=transforms_targets,
         )
 
-    def __getitem__(self, index: int) -> Optional[Dict[BatchKeys, Any]]:
+    def __getitem__(self, index: int) -> dict[BatchKeys, Any] | None:
         """Get processed sample at index."""
         try:
             raw_sample = self._get_raw_item(index)
@@ -347,11 +343,11 @@ class ProcessedDataset:
             logger.debug("Traceback:", exc_info=True)
             return None
 
-    def _get_raw_item(self, index: int) -> Dict[str, Any]:
+    def _get_raw_item(self, index: int) -> dict[str, Any]:
         """Get raw sample - must be implemented by subclasses."""
         raise NotImplementedError
 
-    def _get_sampler(self, shuffle: bool) -> Optional[torch.utils.data.Sampler]:
+    def _get_sampler(self, shuffle: bool) -> torch.utils.data.Sampler | None:
         """Get sampler for this dataset. Override in subclasses if needed."""
         return dist.get_sampler(self, shuffle=shuffle)
 
@@ -419,7 +415,7 @@ class DummyDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return self.num_samples
 
-    def __getitem__(self, idx: int) -> Dict[BatchKeys, Any]:
+    def __getitem__(self, idx: int) -> dict[BatchKeys, Any]:
         sample = {
             BatchKeys.IMAGE: torch.rand(3, *self.image_size),
             BatchKeys.PROMPT: "".join(random.choices(string.ascii_lowercase + " ", k=32)),

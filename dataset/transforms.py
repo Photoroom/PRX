@@ -3,7 +3,8 @@ import math
 from collections.abc import Iterable
 from functools import lru_cache
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Sequence, Set, Tuple, TypeVar, Union
+from collections.abc import Sequence
+from typing import Any, TypeVar
 
 import numpy as np
 import torch
@@ -22,11 +23,11 @@ class ToTensorImage:
     def __init__(self) -> None:
         self.transform = transforms.Compose([transforms.ToImage(), transforms.ToDtype(torch.float32, scale=True)])
 
-    def __call__(self, *img: Union[Image.Image, torch.Tensor]) -> torch.Tensor:
+    def __call__(self, *img: Image.Image | torch.Tensor) -> torch.Tensor:
         return self.transform(*img)
 
 
-def image_to_tensor(image: Union[bytes, Image.Image, np.ndarray, torch.Tensor]) -> torch.Tensor:
+def image_to_tensor(image: bytes | Image.Image | np.ndarray | torch.Tensor) -> torch.Tensor:
     """Convert various image formats to torch tensor.
 
     Args:
@@ -54,7 +55,7 @@ def image_to_tensor(image: Union[bytes, Image.Image, np.ndarray, torch.Tensor]) 
 
 def build_image_size_list(
     default_image_size: int, patch_size_pixels: int, min_ar: float = 0.5, max_ar: float = 2.0, divisible_by: int = 16
-) -> Set[Tuple[int, int]]:
+) -> set[tuple[int, int]]:
     """
     Build a list of image sizes to cover multiple aspect ratios (non exhaustive).
     All generated sizes have approximately the same total number of patches.
@@ -118,7 +119,7 @@ class ArAwareTransform(torch.nn.Module, ABC):
         self.min_ar = min_ar
         self.max_ar = max_ar
         self.divisible_by = divisible_by
-        self.target_image_sizes: Set[Tuple[int, int]] = build_image_size_list(
+        self.target_image_sizes: set[tuple[int, int]] = build_image_size_list(
             default_image_size=default_image_size,
             patch_size_pixels=patch_size_pixels,
             min_ar=min_ar,
@@ -142,12 +143,12 @@ class ArAwareTransform(torch.nn.Module, ABC):
         pass
 
 
-def _get_shape(image: Union[torch.Tensor, Image.Image]) -> Tuple[int, int]:
+def _get_shape(image: torch.Tensor | Image.Image) -> tuple[int, int]:
     # Image.size is [w, h], while a torch tensor is typically [h, w]
     if isinstance(image, torch.Tensor):
-        shape: Tuple[int, int] = image.shape[-2:]
+        shape: tuple[int, int] = image.shape[-2:]
         return shape
-    shape: Tuple[int, int] = image.size[::-1]
+    shape: tuple[int, int] = image.size[::-1]
     return shape
 
 
@@ -168,7 +169,7 @@ class ArAwareCenterCrop(ArAwareTransform):
         return selected_ar
 
     @lru_cache(maxsize=128)
-    def _get_crop_coord(self, image_h: int, image_w: int, ar: float) -> Tuple[int, int]:
+    def _get_crop_coord(self, image_h: int, image_w: int, ar: float) -> tuple[int, int]:
         # If w > h make sure to crop on w
         if image_w >= image_h:
             crop_h = image_h
@@ -178,17 +179,17 @@ class ArAwareCenterCrop(ArAwareTransform):
             crop_h = round(image_w / ar)
         return crop_h, crop_w
 
-    def get_target_ar(self, image: Union[torch.Tensor, Image.Image]) -> float:
+    def get_target_ar(self, image: torch.Tensor | Image.Image) -> float:
         image_h, image_w = _get_shape(image)
         return self._get_target_ar(image_h, image_w)
 
-    def get_crop_coord(self, image: Union[torch.Tensor, Image.Image], target_ar: float) -> Tuple[int, int]:
+    def get_crop_coord(self, image: torch.Tensor | Image.Image, target_ar: float) -> tuple[int, int]:
         image_h, image_w = _get_shape(image)
         return self._get_crop_coord(image_h, image_w, target_ar)
 
     def __call__(
-        self, images: Union[torch.Tensor, Iterable[torch.Tensor]]
-    ) -> Union[torch.Tensor, Iterable[torch.Tensor]]:
+        self, images: torch.Tensor | Iterable[torch.Tensor]
+    ) -> torch.Tensor | Iterable[torch.Tensor]:
         """
         Crop each image tensor to the target size based on the closest aspect ratio.
 
@@ -201,7 +202,7 @@ class ArAwareCenterCrop(ArAwareTransform):
         """
 
         # Crop a single image
-        def crop_image(image: torch.Tensor, target_ar: Optional[float] = None) -> torch.Tensor:
+        def crop_image(image: torch.Tensor, target_ar: float | None = None) -> torch.Tensor:
             # Either compute the target ar on the fly, or use the one provided
             target_h, target_w = self.get_crop_coord(image, target_ar or self.get_target_ar(image))
             return transforms.functional.center_crop(image, (target_h, target_w))
@@ -226,13 +227,13 @@ class ArAwareResize(ArAwareTransform):
     Applicable to PIL.Image and torch.Tensor
     """
 
-    def get_target_size(self, image: Union[torch.Tensor, Image.Image]) -> Tuple[int, int]:
+    def get_target_size(self, image: torch.Tensor | Image.Image) -> tuple[int, int]:
         image_height, image_width = _get_shape(image)
         return self.ar_to_size[self.get_closest_ar(image_width, image_height)]
 
     def __call__(
-        self, images: Union[torch.Tensor, Iterable[torch.Tensor]]
-    ) -> Union[torch.Tensor, Iterable[torch.Tensor]]:
+        self, images: torch.Tensor | Iterable[torch.Tensor]
+    ) -> torch.Tensor | Iterable[torch.Tensor]:
         """
         Resize each image tensor to the target size.
 
@@ -245,7 +246,7 @@ class ArAwareResize(ArAwareTransform):
         """
 
         # Resize a single image
-        def resize_image(image: torch.Tensor, target_size: Optional[Tuple[int, int]] = None) -> torch.Tensor:
+        def resize_image(image: torch.Tensor, target_size: tuple[int, int] | None = None) -> torch.Tensor:
             # Either compute the target size on the fly, or use the one provided
             target_w, target_h = target_size or self.get_target_size(image)
 
