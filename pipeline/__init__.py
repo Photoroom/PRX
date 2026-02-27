@@ -1,7 +1,7 @@
-from pipeline.pipeline import EMAModel, LatentDiffusion
+from pipeline.pipeline import EMAModel, Pipeline
 from pipeline.models_factory import build_pipeline
 __all__ = [
-    "LatentDiffusion",
+    "Pipeline",
     "EMAModel",
     "ModelInputs",
     "build_pipeline",

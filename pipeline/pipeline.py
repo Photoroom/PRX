@@ -85,7 +85,7 @@ class EMAModel(torch.nn.Module):
         """Copy weights from source_model to self.model."""
         self.model.load_state_dict(source_model.state_dict(), strict=strict)
 
-class LatentDiffusion(ComposerModel):
+class Pipeline(ComposerModel):
     """Latent Diffusion pipeline for training and inference.
 
     Extends ComposerModel for integration with the Composer training framework.

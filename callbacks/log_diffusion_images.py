@@ -13,7 +13,7 @@ from composer.utils import dist
 from torch.nn.parallel import DistributedDataParallel
 
 from dataset.constants import BatchKeys
-from pipeline.pipeline import LatentDiffusion
+from pipeline.pipeline import Pipeline
 
 
 class LogDiffusionImages(Callback):
@@ -87,7 +87,7 @@ class LogDiffusionImages(Callback):
         self.extra_denoisers_num_inference_steps = extra_denoisers_num_inference_steps
         self.extra_denoisers_guidance_scales = extra_denoisers_guidance_scales
 
-    def get_model(self, state: State) -> LatentDiffusion:
+    def get_model(self, state: State) -> Pipeline:
         if isinstance(state.model, DistributedDataParallel):
             return state.model.module
         else:

@@ -11,7 +11,7 @@ from models.prx import PRX
 
 from schedulers.scheduler import EulerDiscreteScheduler, SchedulerConfig
 
-from .pipeline import LatentDiffusion
+from .pipeline import Pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ def build_pipeline(
     denoiser_dtype: str | torch.dtype | None = None,
 
     **kwargs: Any,
-) -> LatentDiffusion:
+) -> Pipeline:
     """Build diffusion pipeline from Hydra-composed configs.
     config groups instead of string references to Python objects.
 
@@ -123,10 +123,10 @@ def build_pipeline(
         negative_prompt: Default negative prompt
         latent_channels: Override denoiser in_channels if specified
         denoiser_dtype: Override denoiser dtype
-        **kwargs: Additional args passed to LatentDiffusion
+        **kwargs: Additional args passed to Pipeline
 
     Returns:
-        LatentDiffusion pipeline instance
+        Pipeline pipeline instance
     """
     device = _get_device()
 
@@ -190,7 +190,7 @@ def build_pipeline(
     logger.info("Total denoiser params: %.3fB", sum(p.numel() for p in denoiser.parameters()) / 1e9)
 
     # Build pipeline
-    pipeline = LatentDiffusion(
+    pipeline = Pipeline(
         denoiser=denoiser,
         vae=vae,
         text_tower=text_tower,
