@@ -16,9 +16,9 @@ from streaming.base.world import World
 from .constants import BatchKeys
 from .dataset import ProcessedDataset, DEFAULT_DATA_AUG_TARGETS
 from .dataset import logger
-from .mds_patches import patch_mds_encoding
+from .mds_patches import patch_mosaic_streaming
 
-patch_mds_encoding()
+patch_mosaic_streaming()
 
 INDEX_FILE = "index.json"
 INDEX_FILE_SUFFIX = "_index.json"
