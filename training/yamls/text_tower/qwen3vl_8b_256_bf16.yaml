@@ -1,0 +1,10 @@
+# Qwen3-VL-8B-Instruct Text Tower (256 max length, bf16)
+# Same model as the Qwen3-VL captioner — enables reusing weights when
+# captioning and text encoding are fused in a single pipeline.
+# Text backbone only (vision encoder discarded after loading), hidden_size=4096, ~16GB VRAM
+model_name: Qwen/Qwen3-VL-8B-Instruct
+prompt_max_tokens: 256
+use_attn_mask: true
+use_last_hidden_state: true
+torch_dtype: torch.bfloat16
+skip_text_cleaning: true

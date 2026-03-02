@@ -2,7 +2,7 @@ from typing import NamedTuple
 
 import ftfy
 import torch
-from transformers import AutoTokenizer, T5EncoderModel, GemmaTokenizerFast, T5GemmaModel
+from transformers import AutoTokenizer, GemmaTokenizerFast, Qwen3VLModel, T5EncoderModel, T5GemmaModel
 from transformers.modeling_utils import ModuleUtilsMixin
 
 import html
@@ -22,13 +22,14 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
 
     def __init__(
         self,
-        model_name: str = "t5gemma2b-256-bf16",
+        model_name: str = "google/t5gemma-2b-2b-ul2",
         only_tokenizer: bool = False,
         use_attn_mask: bool = True,
         prompt_max_tokens: int = 256,
         use_last_hidden_state: bool = True,
         torch_dtype: torch.dtype = torch.float32,
         unpadded: bool = False,
+        skip_text_cleaning: bool = False,
     ) -> None:
         super().__init__()
         self.only_tokenizer = only_tokenizer
@@ -36,6 +37,7 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
         self.use_last_hidden_state = use_last_hidden_state
         self.torch_dtype = torch_dtype
         self.unpadded = unpadded
+        self.skip_text_cleaning = skip_text_cleaning
 
         self.tokenizer, self.text_encoder = self.create_model(model_name, prompt_max_tokens)
         self.tokenizer_max_length = prompt_max_tokens
@@ -164,7 +166,10 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
             texts = [texts]
 
         # clean text
-        texts = [self.clean_text(text) for text in texts]
+        if self.skip_text_cleaning:
+            texts = [self.basic_clean(text) for text in texts]
+        else:
+            texts = [self.clean_text(text) for text in texts]
 
         if self.unpadded:
             tokens = self.tokenizer(
@@ -241,11 +246,36 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
     def forward(self, texts: str | list[str]) -> dict[str, torch.Tensor]:
         return self.text_to_embed(texts)
 
-    def create_model(self, model_config: str, prompt_max_tokens: int) -> tuple[AutoTokenizer, T5EncoderModel | None]:
+    def create_model(
+        self, model_config: str, prompt_max_tokens: int
+    ) -> tuple[AutoTokenizer | GemmaTokenizerFast, torch.nn.Module | None]:
+        if "qwen" in model_config.lower():
+            return self._create_qwen_vl_model(model_config, prompt_max_tokens)
+        return self._create_t5gemma_model(model_config, prompt_max_tokens)
+
+    def _create_t5gemma_model(
+        self, model_config: str, prompt_max_tokens: int
+    ) -> tuple[GemmaTokenizerFast, T5EncoderModel | None]:
         tokenizer = GemmaTokenizerFast.from_pretrained(model_config)
         tokenizer.prompt_max_tokens = prompt_max_tokens
         if self.only_tokenizer:
             return tokenizer, None
-        else:
-            text_encoder = T5GemmaModel.from_pretrained(model_config, torch_dtype=self.torch_dtype).encoder
+        text_encoder = T5GemmaModel.from_pretrained(model_config, torch_dtype=self.torch_dtype).encoder
+        return tokenizer, text_encoder
+
+    def _create_qwen_vl_model(
+        self, model_config: str, prompt_max_tokens: int
+    ) -> tuple[AutoTokenizer, torch.nn.Module | None]:
+        tokenizer = AutoTokenizer.from_pretrained(model_config)
+        tokenizer.prompt_max_tokens = prompt_max_tokens
+        if self.only_tokenizer:
+            return tokenizer, None
+        # Load the bare VL model (no LM head) and extract the text backbone.
+        # Qwen3VLTextModel cannot load directly from VL checkpoints due to key
+        # prefix mismatch, so we load Qwen3VLModel and pull out language_model.
+        full_model = Qwen3VLModel.from_pretrained(
+            model_config, dtype=self.torch_dtype
+        )
+        text_encoder = full_model.language_model
+        del full_model
         return tokenizer, text_encoder
