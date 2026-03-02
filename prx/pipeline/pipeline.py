@@ -121,6 +121,7 @@ class Pipeline(ComposerModel):
         val_guidance_scales: list[float] | None = None,
         loss_bins: list[tuple[int, int]] | None = None,
         negative_prompt: str = "",
+        noise_scale: float = 1.0,
     ):
         super().__init__()
 
@@ -130,7 +131,8 @@ class Pipeline(ComposerModel):
         self.text_tower = text_tower
         self.noise_scheduler: BaseScheduler = noise_scheduler
         self.inference_scheduler: BaseScheduler = inference_noise_scheduler
-
+        self.noise_scale = noise_scale
+        
         if not 0.0 <= p_drop_caption <= 1.0:
             raise ValueError(f"p_drop_caption must be between 0.0 and 1.0, got {p_drop_caption}")
         self.p_drop_caption = p_drop_caption
@@ -394,7 +396,7 @@ class Pipeline(ComposerModel):
             )
 
     def get_latent_noise(self, latents: torch.Tensor) -> torch.Tensor:
-        noise = torch.randn_like(latents)
+        noise = torch.randn_like(latents) * self.noise_scale
         return noise
 
     def loss(self, outputs: dict[str, torch.Tensor], batch: dict[BatchKeys, Any]) -> torch.Tensor:
@@ -542,7 +544,7 @@ class Pipeline(ComposerModel):
                         device=self.denoiser_device,
                         dtype=self.denoiser_dtype,
                         generator=rng_generator.manual_seed(_seed),
-                    )
+                    ) * self.noise_scale
                     for _seed in seed
                 ],
                 dim=0,
@@ -556,7 +558,7 @@ class Pipeline(ComposerModel):
                 device=self.denoiser_device,
                 dtype=self.denoiser_dtype,
                 generator=rng_generator,
-            )
+            ) * self.noise_scale
 
     def _compute_cfg_guidance(
         self,
