@@ -1,5 +1,6 @@
-from pipeline.pipeline import EMAModel, Pipeline
-from pipeline.models_factory import build_pipeline
+from .pipeline import EMAModel, Pipeline 
+from .models_factory import build_pipeline
+
 __all__ = [
     "Pipeline",
     "EMAModel",

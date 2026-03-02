@@ -20,7 +20,7 @@ from streaming.base.distributed import maybe_init_dist
 from torch import distributed as torch_dist
 from torch.nn.parallel import DistributedDataParallel
 
-from seed_utils import set_seeds
+from .seed_utils import set_seeds
 
 
 def clean_up_mosaic() -> None:

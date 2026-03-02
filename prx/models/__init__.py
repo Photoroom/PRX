@@ -1,12 +1,12 @@
-from models.text_tower import TextTower
-from models.vae_tower import VaeTower
-from models.prx import (
+from .text_tower import TextTower
+from .vae_tower import VaeTower
+from .prx import (
     PRX,
     PRXParams,
     img2seq,
     seq2img,
 )
-from models.prx_layers import (
+from .prx_layers import (
     EmbedND,
     LastLayer,
     PRXBlock,

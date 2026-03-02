@@ -1,5 +1,11 @@
 .cursor
 .vscode
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
 tmp
 wandb
 checkpoints

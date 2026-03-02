@@ -9,9 +9,9 @@ from composer.models import ComposerModel
 from torchmetrics import MeanSquaredError, Metric
 from tqdm.auto import tqdm
 
-from dataset.constants import BatchKeys
-from schedulers.scheduler import BaseScheduler
-from models.text_tower import TextTower
+from prx.dataset.constants import BatchKeys
+from prx.schedulers.scheduler import BaseScheduler
+from prx.models.text_tower import TextTower
 
 
 class ModelInputs(StrEnum):

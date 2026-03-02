@@ -23,9 +23,9 @@ from torch.nn.parallel import DistributedDataParallel
 from torchmetrics import Metric
 from torchmetrics.image.fid import FrechetInceptionDistance
 
-from callbacks.feature_extractors import CLIPFeatureExtractor, DINOFeatureExtractor
-from dataset.constants import BatchKeys
-from pipeline.pipeline import Pipeline
+from .feature_extractors import CLIPFeatureExtractor, DINOFeatureExtractor
+from prx.dataset.constants import BatchKeys
+from prx.pipeline.pipeline import Pipeline 
 
 _logger = logging.getLogger(__name__)
 

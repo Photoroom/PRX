@@ -5,7 +5,7 @@ from typing import Any
 import torch
 from torch import Tensor, nn
 
-from algorithm.tread import Tread
+from .tread import Tread
 
 
 class SPRINT(Tread):

@@ -1,6 +1,6 @@
 """Schedulers for diffusion models."""
 
-from schedulers.scheduler import (
+from .scheduler import (
     BaseScheduler,
     EulerDiscreteScheduler,
     SchedulerConfig,
