@@ -45,6 +45,14 @@ all = ["prx[streaming,lpips,dev]"]
 [project.urls]
 Repository = "https://github.com/Photoroom/prx"
 
+[tool.pytest.ini_options]
+markers = [
+    "unit: fast unit tests (no GPU, no model downloads)",
+    "integration: integration tests (may download models)",
+    "gpu: tests requiring CUDA GPU",
+]
+testpaths = ["tests"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
