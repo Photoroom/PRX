@@ -48,7 +48,68 @@ composer -m prx.training.train --config-path=configs/yamls hydra/launcher=basic
 ```
 
 ## Data
-We will post tomorrow a script to convert datasets into the MDS format used by PRX and exemplify how to use it to train a model on a your dataset.
+
+PRX trains on [MosaicML Streaming (MDS)](https://github.com/mosaicml/streaming) datasets, organized into aspect-ratio buckets. We provide a conversion script that takes WebDataset-style tar files and produces AR-bucketed MDS shards ready for training.
+
+### Example: fine-t2i dataset
+
+1. **Download** the [fine-t2i](https://huggingface.co/datasets/ma-xu/fine-t2i) dataset:
+
+```bash
+HF_HUB_CACHE=/path/to/cache huggingface-cli download ma-xu/fine-t2i --repo-type dataset
+```
+
+2. **Convert** to AR-bucketed MDS (images resized to 1024-base AR buckets, 27 buckets, patch_size=32):
+
+```bash
+uv run scripts/fine-t2i-to-mds.py \
+    --input /path/to/cache/hub/datasets--ma-xu--fine-t2i/snapshots/<hash> \
+    --output /path/to/output/fine-t2i \
+    --workers 16
+```
+
+This produces one MDS subdirectory per aspect ratio (e.g. `0.667/`, `1.000/`, `1.500/`), each containing sharded MDS files with a merged `index.json`.
+
+3. **Train** by pointing a dataset config at the output directory. Create a dataset YAML (e.g. `configs/yamls/dataset/train_fine_t2i.yaml`):
+
+```yaml
+# @package dataset.train_dataset
+_target_: prx.dataset.StreamingProcessedDataset
+local:
+  - /path/to/output/fine-t2i
+
+caption_keys:
+  - [prompt, 0.5]
+  - [enhanced_prompt, 0.5]
+has_text_latents: false
+text_tower: ${diffusion_text_tower.preset_name}
+cache_limit: 8tb
+drop_last: true
+shuffle: true
+batching_method: device_per_stream
+num_workers: 8
+persistent_workers: true
+pin_memory: true
+transforms:
+  - _target_: prx.dataset.transforms.ArAwareResize
+    default_image_size: ${image_size}
+    patch_size_pixels: ${patch_size_pixels}
+transforms_targets:
+  - image
+```
+
+> **Note:** `ArAwareResize` is still used at training time even though images were already resized during MDS export. The MDS conversion targets a fixed 1024-base resolution, but the training config may use a different `image_size` (e.g. 512 for early-stage training). `ArAwareResize` ensures images are resized to match the model's current resolution and patch grid, and also handles any JPEG decode size differences.
+
+Then launch training referencing your dataset config:
+
+```bash
+composer -m prx.training.train \
+    --config-path=configs/yamls \
+    hydra/launcher=basic \
+    dataset/train_dataset=train_fine_t2i
+```
+
+See the [JIT-benchmark configs](configs/yamls/JIT-benchmark/) for full training configuration examples.
 
 
 ## License
