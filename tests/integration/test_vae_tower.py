@@ -9,11 +9,11 @@ import yaml
 
 from prx.models.vae_tower import VaeTower
 
-IDENTITY_CONFIG_REL_PATH: str = "training/yamls/vae/identity.yaml"
-FLUX_CONFIG_REL_PATH: str = "training/yamls/vae/flux_dev.yaml"
-FLUX2_CONFIG_REL_PATH: str = "training/yamls/vae/flux2.yaml"
-DC_AE_CONFIG_REL_PATH: str = "training/yamls/vae/dc_ae_sana.yaml"
-REPA_E_CONFIG_REL_PATH: str = "training/yamls/vae/flux_repa_e.yaml"
+IDENTITY_CONFIG_REL_PATH: str = "configs/yamls/vae/identity.yaml"
+FLUX_CONFIG_REL_PATH: str = "configs/yamls/vae/flux_dev.yaml"
+FLUX2_CONFIG_REL_PATH: str = "configs/yamls/vae/flux2.yaml"
+DC_AE_CONFIG_REL_PATH: str = "configs/yamls/vae/dc_ae_sana.yaml"
+REPA_E_CONFIG_REL_PATH: str = "configs/yamls/vae/flux_repa_e.yaml"
 
 
 def _load_cfg(repo_root: Path, rel_path: str) -> dict[str, Any]:

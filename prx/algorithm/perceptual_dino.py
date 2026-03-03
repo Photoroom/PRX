@@ -103,7 +103,7 @@ class PerceptualDINO(Algorithm):
         model = state.model.module if hasattr(state.model, "module") else state.model
 
         # Guard: P-DINO requires x-prediction mode (denoiser outputs x0, not velocity)
-        from pipeline.pipeline import PredictionType
+        from prx.pipeline.pipeline import PredictionType
         pred_type = model.noise_scheduler.config.prediction_type
         if pred_type != PredictionType.X_PREDICTION_FLOW_MATCHING:
             raise ValueError(

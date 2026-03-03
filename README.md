@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="PRX.png" alt="PRX" width="500">
+  <img src="assets/PRX.png" alt="PRX" width="500">
 </p>
 <p align="center">
-  <img src="mosaic.png" alt="PRX samples" width="900">
+  <img src="assets/mosaic.png" alt="PRX samples" width="900">
 </p>
 
 
@@ -41,10 +41,10 @@ uv sync --all-extras        # Everything
 
 ## Training
 
-Training is configured with [Hydra](https://hydra.cc/) YAML files. See [`training/yamls/`](training/yamls/) for examples. The repository includes all the training configurations used in the benchmarks presented in the [blog post](https://huggingface.co/blog/Photoroom/prx-part2).
+Training is configured with [Hydra](https://hydra.cc/) YAML files. See [`configs/yamls/`](configs/yamls/) for examples. The repository includes all the training configurations used in the benchmarks presented in the [blog post](https://huggingface.co/blog/Photoroom/prx-part2).
 
 ```bash
-composer -m prx.training.train --config-path=training/yamls hydra/launcher=basic
+composer -m prx.training.train --config-path=configs/yamls hydra/launcher=basic
 ```
 
 

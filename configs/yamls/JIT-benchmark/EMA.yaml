@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - JIT-Baseline
+  - _self_
+
+name: EMA
+
+algorithms:
+  ema:
+    _target_: prx.algorithm.ema.EMA
+    smoothing: 0.999
+    update_interval: 10ba
+    ema_start: 0ba

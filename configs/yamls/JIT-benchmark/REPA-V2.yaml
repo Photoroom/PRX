@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - JIT-Baseline
+  - _self_
+
+name: REPA-Dinov2
+
+algorithms:
+  repa:
+    _target_: prx.algorithm.repa.REPA
+    lambda_weight: 0.5
+    layer_index: 7
+    encoder: "dinov2_vitl14_reg"
+    compile_encoder: true

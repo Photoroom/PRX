@@ -20,7 +20,7 @@ from streaming.base.distributed import maybe_init_dist
 from torch import distributed as torch_dist
 from torch.nn.parallel import DistributedDataParallel
 
-from .seed_utils import set_seeds
+from prx.training.seed_utils import set_seeds
 
 
 def clean_up_mosaic() -> None:
@@ -157,6 +157,10 @@ def train(config: DictConfig) -> None:
         print("> Compiling the VAE encoder")
         compile_model("vae.encoder", dynamic=True)
 
+    if config.get("compile_text_tower", False):
+        print("> Compiling the text tower")
+        compile_model("text_tower")
+
 
     def eval_and_then_train() -> None:
         """Run initial evaluation (if configured) followed by training."""
@@ -175,7 +179,7 @@ def train(config: DictConfig) -> None:
     return eval_and_then_train()
 
 
-@hydra.main(version_base=None, config_path="yamls", config_name="PRX-JIT-1024")
+@hydra.main(version_base=None, config_path="../../configs/yamls", config_name="PRX-JIT-1024")
 def main(config: DictConfig) -> None:
     """Entry point for training with Hydra configuration management.
 

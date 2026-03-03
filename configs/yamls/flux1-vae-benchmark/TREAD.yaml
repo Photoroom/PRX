@@ -1,0 +1,21 @@
+# @package _global_
+defaults:
+  - Flux-Baseline
+  - _self_
+
+group: Flux-VAE-Benchmark
+name: TREAD_Auto_guidance
+
+algorithms:
+  tread:
+    _target_: prx.algorithm.tread.Tread
+    route_start: 2
+    route_end: 12
+    routing_probability: 0.5
+    detach: false
+    seed: 42
+    train_only: true
+    self_guidance: true
+
+trainer:
+  save_folder: checkpoints/TREAD_Auto_guidance

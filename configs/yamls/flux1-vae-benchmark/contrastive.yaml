@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - Flux-Baseline
+  - _self_
+
+name: Contrastive-FM
+
+algorithms:
+  contrastive:
+    _target_: prx.algorithm.contrastive_flow_matching.ContrastiveFlowMatching
+    lambda_weight: 0.05

@@ -9,7 +9,7 @@ import yaml
 
 from prx.models.text_tower import TextTower
 
-CONFIG_REL_PATH: str = "training/yamls/text_tower/qwen3vl_2b_256_bf16.yaml"
+CONFIG_REL_PATH: str = "configs/yamls/text_tower/qwen3vl_2b_256_bf16.yaml"
 
 SAMPLE_TEXTS: list[str] = [
     "A photo of a cat sitting on a windowsill",
