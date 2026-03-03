@@ -210,9 +210,7 @@ class Pipeline(ComposerModel):
         return {k: v.to(device) for k, v in self.text_tower([text]).items()}
 
     def encode_texts(self, texts: list[str], device: torch.device) -> dict[str, torch.Tensor]:
-        outputs = [self.encode_single_text(text, device) for text in texts]
-        # list of dict to dict
-        return {key: torch.vstack([i[key] for i in outputs]) for key in outputs[0]}
+        return {k: v.to(device) for k, v in self.text_tower(texts).items()}
 
     @torch.no_grad()  # type: ignore
     def get_text_embedding(self, batch: dict[BatchKeys, Any]) -> dict[ModelInputs, torch.Tensor]:

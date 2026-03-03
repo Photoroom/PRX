@@ -2,7 +2,7 @@ from typing import NamedTuple
 
 import ftfy
 import torch
-from transformers import AutoTokenizer, GemmaTokenizerFast, Qwen3VLModel, T5EncoderModel, T5GemmaModel
+from transformers import AutoTokenizer, GemmaTokenizerFast, Qwen3VLForConditionalGeneration, T5EncoderModel, T5GemmaModel
 from transformers.modeling_utils import ModuleUtilsMixin
 
 import html
@@ -270,12 +270,12 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
         tokenizer.prompt_max_tokens = prompt_max_tokens
         if self.only_tokenizer:
             return tokenizer, None
-        # Load the bare VL model (no LM head) and extract the text backbone.
-        # Qwen3VLTextModel cannot load directly from VL checkpoints due to key
-        # prefix mismatch, so we load Qwen3VLModel and pull out language_model.
-        full_model = Qwen3VLModel.from_pretrained(
+        # Load the full conditional-generation model and extract the text backbone.
+        # The checkpoint is saved for Qwen3VLForConditionalGeneration (keys prefixed
+        # with "model."), so loading via Qwen3VLModel silently gets random weights.
+        full_model = Qwen3VLForConditionalGeneration.from_pretrained(
             model_config, dtype=self.torch_dtype
         )
-        text_encoder = full_model.language_model
+        text_encoder = full_model.model.language_model
         del full_model
         return tokenizer, text_encoder

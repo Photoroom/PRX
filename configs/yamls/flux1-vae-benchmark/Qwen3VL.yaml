@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - Flux-Baseline
+  - override /text_tower@diffusion_text_tower: qwen3vl_2b_256_bf16
+  - _self_
+
+group: PRX-FluxVAE-Benchmark-256px-blog
+name: Qwen3VL-Embedding-2B
+compile_text_tower: true
+
+# Compute text latents on the fly (no precomputed Qwen3VL embeddings in dataset)
+dataset:
+  train_dataset:
+    has_text_latents: false
+    has_mask_text_latents: false
+  eval_dataset:
+    has_text_latents: false
+    has_mask_text_latents: false
