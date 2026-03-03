@@ -2,6 +2,7 @@
 # Embedding-tuned variant — bidirectional attention (not causal),
 # better semantic representations than Instruct for conditioning.
 # Text backbone only (vision encoder discarded after loading), hidden_size=2048
+preset_name: qwen3vl-2b-256-bf16
 model_name: Qwen/Qwen3-VL-Embedding-2B
 prompt_max_tokens: 256
 use_attn_mask: true

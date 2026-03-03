@@ -2,6 +2,7 @@
 # Same model as the Qwen3-VL captioner — enables reusing weights when
 # captioning and text encoding are fused in a single pipeline.
 # Text backbone only (vision encoder discarded after loading), hidden_size=4096, ~16GB VRAM
+preset_name: qwen3vl-8b-256-bf16
 model_name: Qwen/Qwen3-VL-8B-Instruct
 prompt_max_tokens: 256
 use_attn_mask: true

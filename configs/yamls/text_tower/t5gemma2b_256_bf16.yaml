@@ -1,5 +1,6 @@
 # T5-Gemma 2B Text Tower (256 max length, bf16)
 # Used for text encoding in diffusion models
+preset_name: t5gemma2b-256-bf16
 model_name: google/t5gemma-2b-2b-ul2
 prompt_max_tokens: 256
 use_attn_mask: true

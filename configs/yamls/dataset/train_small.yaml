@@ -9,7 +9,7 @@ caption_keys:
   - [caption_llm_s, 1.]
   # - [caption, 1.]
   # - [caption_alt, 1.]
-text_tower: t5gemma2b-256-bf16 
+text_tower: ${diffusion_text_tower.preset_name}
 prompt_max_tokens: 256
 cache_limit: 8tb
 download_timeout: 7200
