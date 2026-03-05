@@ -16,9 +16,7 @@ from streaming.base.world import World
 from .constants import BatchKeys
 from .dataset import ProcessedDataset, DEFAULT_DATA_AUG_TARGETS
 from .dataset import logger
-from .mds_patches import patch_mosaic_streaming
-
-patch_mosaic_streaming()
+from .mds_patches import *  # noqa: F401,F403 — applies encoding + streaming patches on import
 
 INDEX_FILE = "index.json"
 INDEX_FILE_SUFFIX = "_index.json"
