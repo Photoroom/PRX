@@ -30,6 +30,7 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
         torch_dtype: torch.dtype = torch.float32,
         unpadded: bool = False,
         skip_text_cleaning: bool = False,
+        **kwargs,
     ) -> None:
         super().__init__()
         self.only_tokenizer = only_tokenizer

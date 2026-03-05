@@ -206,7 +206,7 @@ class SampleProcessor:
         for target in self.transform_targets:
             if target in sample:
                 img = sample[target]
-                if isinstance(img, bytes):
+                if not isinstance(img, torch.Tensor):
                     img = image_to_tensor(img)
                 images[target] = img
 
