@@ -1,30 +1,11 @@
 """
-MDS Encoding Patches
+MDS Encoding Patch
 
-This module provides patches to the MDS encoding system to support custom data types
-like bfloat16 tensors. It works by injecting our own custom encoding classes into the
-internal list of encodings from the streaming library.
+Adds custom encoding support (e.g. bfloat16 tensors) to MosaicML Streaming's
+MDS format. The patch is applied automatically when this module is imported.
 
 Usage:
-    from dataset.mds_patches import patch_mds_encoding
-
-    # Enable custom encodings, e.g. bfloat16 tensor support in MDS
-    patch_mds_encoding()
-
-    # We can also implement a custom encoding class inheriting from
-    # streaming.base.format.mds.encodings.Encoding and register it with the MDS
-    # encoding system.
-    register_custom_encoding("some_enc_id", MyCustomEncodingClass)
-
-    # Now we can use the custom encodings in MDS samples
-    sample = {'tensor': torch.randn(3, 4, dtype=torch.bfloat16)}
-    with MDSWriter(out=path, columns={'tensor': 'some_enc_id'}) as writer:
-        writer.write(sample)  # Just works!
-
-    # Now you can use bfloat16 tensors directly in MDS samples
-    sample = {'tensor': torch.randn(3, 4, dtype=torch.bfloat16)}
-    with MDSWriter(out=path, columns={'tensor': 'bf16'}) as writer:
-        writer.write(sample)  # Just works!
+    from prx.dataset.mds_patches import encoding_patch  # patch applied on import
 """
 
 import numpy as np
@@ -117,22 +98,6 @@ def patch_mds_encoding() -> None:
 
     This is much simpler than patching individual functions and automatically
     works everywhere the _encodings dict is used.
-
-    Example:
-        patch_mds_encoding()
-
-        # Writing data
-        sample = {'tensor': torch.randn(3, 4, dtype=torch.bfloat16)}
-        columns = {'tensor': 'bf16'}
-
-        with MDSWriter(out=path, columns=columns) as writer:
-            writer.write(sample)  # Automatically encodes the bfloat16 tensor
-
-        # Reading data - automatic deserialization
-        dataset = StreamingDataset(local=path)
-        for item in dataset:
-            bf16_tensor = item['tensor']  # Automatically decoded as torch.bfloat16
-            assert bf16_tensor.dtype == torch.bfloat16
     """
     global _is_patched
 
@@ -187,5 +152,5 @@ def is_patched() -> bool:
 # Register the bfloat16 encoding class (not instance)
 register_custom_encoding("bf16", BFloat16TensorEncoding)
 
-# Auto-patch on import (can be enabled if needed)
-# patch_mds_encoding()
+# Auto-apply on import
+patch_mds_encoding()
