@@ -9,7 +9,7 @@ from prx.dataset.constants import BatchKeys
 from prx.models.text_tower import TextTower
 from prx.schedulers.scheduler import BaseScheduler
 
-# Re-export types from fm_pipeline for backward compatibility
+# Re-export types from fm_pipeline
 from .fm_pipeline import (
     EMAModel,
     FMPipeline,
