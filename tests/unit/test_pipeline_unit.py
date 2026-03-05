@@ -1,4 +1,4 @@
-"""Unit tests for Pipeline — safety-net tests before refactoring.
+"""Unit tests for ComposerFMPipeline — safety-net tests before refactoring.
 
 These tests mock heavy components (VAE, text tower, denoiser) and run on CPU.
 They capture current behavior to ensure the refactoring doesn't break anything.
@@ -12,11 +12,11 @@ from torchmetrics import MeanSquaredError
 
 from prx.dataset.constants import BatchKeys
 from prx.pipeline.composer_pipeline import (
+    ComposerFMPipeline,
     EMAModel,
     ForwardOutput,
     ImageSize,
     ModelInputs,
-    Pipeline,
     PredictionType,
 )
 from prx.schedulers.scheduler import EulerDiscreteScheduler, SchedulerConfig
@@ -80,7 +80,7 @@ def pipeline():
     text_tower = _make_mock_text_tower()
     vae = _make_mock_vae()
 
-    p = Pipeline(
+    p = ComposerFMPipeline(
         denoiser=_MockDenoiser(),
         vae=vae,
         text_tower=text_tower,
@@ -162,7 +162,7 @@ class TestEMAModel:
 
 
 # ---------------------------------------------------------------------------
-# Pipeline data types
+# ComposerFMPipeline data types
 # ---------------------------------------------------------------------------
 
 @pytest.mark.unit
@@ -183,14 +183,14 @@ class TestDataTypes:
 
 
 # ---------------------------------------------------------------------------
-# Pipeline init
+# ComposerFMPipeline init
 # ---------------------------------------------------------------------------
 
 @pytest.mark.unit
-class TestPipelineInit:
+class TestComposerFMPipelineInit:
     def test_p_drop_caption_validation(self):
         with pytest.raises(ValueError, match="p_drop_caption"):
-            Pipeline(
+            ComposerFMPipeline(
                 denoiser=_MockDenoiser(),
                 vae=_make_mock_vae(),
                 text_tower=_make_mock_text_tower(),
@@ -272,7 +272,7 @@ class TestPureMath:
     def test_get_latent_noise_scaled(self):
         """Noise scale should affect the noise magnitude."""
         text_tower = _make_mock_text_tower()
-        p = Pipeline(
+        p = ComposerFMPipeline(
             denoiser=_MockDenoiser(),
             vae=_make_mock_vae(),
             text_tower=text_tower,
@@ -297,7 +297,7 @@ class TestPureMath:
         scheduler = EulerDiscreteScheduler(
             SchedulerConfig(num_train_timesteps=1000, prediction_type="x_prediction_flow_matching")
         )
-        p = Pipeline(
+        p = ComposerFMPipeline(
             denoiser=_MockDenoiser(),
             vae=_make_mock_vae(),
             text_tower=_make_mock_text_tower(),
