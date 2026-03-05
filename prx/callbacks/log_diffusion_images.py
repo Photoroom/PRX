@@ -13,7 +13,7 @@ from composer.utils import dist
 from torch.nn.parallel import DistributedDataParallel
 
 from prx.dataset.constants import BatchKeys
-from prx.pipeline.pipeline import Pipeline 
+from prx.pipeline.composer_pipeline import Pipeline 
 
 
 class LogDiffusionImages(Callback):

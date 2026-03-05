@@ -14,7 +14,7 @@ from prx.dataset.constants import BatchKeys
 from prx.models.prx import PRX, PRXParams
 from prx.models.text_tower import TextTower
 from prx.models.vae_tower import VaeTower
-from prx.pipeline.pipeline import Pipeline
+from prx.pipeline.composer_pipeline import Pipeline
 from prx.schedulers.scheduler import EulerDiscreteScheduler, SchedulerConfig
 
 

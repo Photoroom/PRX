@@ -141,6 +141,3 @@ class ComposerFMPipeline(FMPipeline, ComposerModel):
             # Update metric for all timesteps
             metric.update(outputs["prediction"], outputs["target"])
 
-
-# Backward-compatible alias
-Pipeline = ComposerFMPipeline

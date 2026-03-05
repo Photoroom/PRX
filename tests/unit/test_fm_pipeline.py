@@ -185,7 +185,7 @@ class TestBackwardCompatibility:
     """Verify all old import paths still work."""
 
     def test_pipeline_alias(self):
-        from prx.pipeline.pipeline import Pipeline, ComposerFMPipeline
+        from prx.pipeline.composer_pipeline import Pipeline, ComposerFMPipeline
         assert Pipeline is ComposerFMPipeline
 
     def test_pipeline_from_init(self):
@@ -195,7 +195,7 @@ class TestBackwardCompatibility:
 
     def test_types_from_pipeline_py(self):
         """Types should be importable from the old location."""
-        from prx.pipeline.pipeline import (
+        from prx.pipeline.composer_pipeline import (
             EMAModel,
             ForwardOutput,
             ImageSize,

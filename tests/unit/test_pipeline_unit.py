@@ -11,7 +11,7 @@ import torch
 from torchmetrics import MeanSquaredError
 
 from prx.dataset.constants import BatchKeys
-from prx.pipeline.pipeline import (
+from prx.pipeline.composer_pipeline import (
     EMAModel,
     ForwardOutput,
     ImageSize,
