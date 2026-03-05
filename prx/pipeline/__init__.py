@@ -1,5 +1,5 @@
 from .fm_pipeline import EMAModel, FMPipeline, ModelInputs
-from .pipeline import ComposerFMPipeline, Pipeline
+from .composer_pipeline import ComposerFMPipeline, Pipeline
 from .models_factory import build_pipeline, build_schedulers, wrap_fsdp_module, resolve_torch_dtype
 
 __all__ = [

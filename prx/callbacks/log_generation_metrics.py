@@ -25,7 +25,7 @@ from torchmetrics.image.fid import FrechetInceptionDistance
 
 from .feature_extractors import CLIPFeatureExtractor, DINOFeatureExtractor
 from prx.dataset.constants import BatchKeys
-from prx.pipeline.pipeline import Pipeline 
+from prx.pipeline.composer_pipeline import Pipeline 
 
 _logger = logging.getLogger(__name__)
 

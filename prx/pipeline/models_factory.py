@@ -11,7 +11,7 @@ from prx.models.prx import PRX
 
 from prx.schedulers.scheduler import EulerDiscreteScheduler, SchedulerConfig
 
-from .pipeline import Pipeline
+from .composer_pipeline import Pipeline
 
 logger = logging.getLogger(__name__)
 
