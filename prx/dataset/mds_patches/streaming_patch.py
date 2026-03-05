@@ -166,7 +166,7 @@ def _patched_generate_work_device_per_stream_batching(
         # Truncate to the synchronized batch count.
         all_partition_batches[node] = all_partition_batches[node][:min_device_batches]
 
-    all_partition_batches_arr: np.ndarray = np.stack(all_partition_batches, axis=1).reshape(-1, batch_size)
+    all_partition_batches_arr: NDArray[np.int64] = np.stack(all_partition_batches, axis=1).reshape(-1, batch_size)
 
     global_batch_size = batch_size * world.num_nodes * world.ranks_per_node
     if sample_in_epoch % global_batch_size != 0:
