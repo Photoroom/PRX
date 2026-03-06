@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - Flux-Baseline
+  - _self_
+
+name: Resolution-Aware
+
+algorithms:
+  resolution_aware:
+    _target_: prx.algorithm.resolution_aware.ResolutionAware
+    mode: "token"
+    max_period: 10000
