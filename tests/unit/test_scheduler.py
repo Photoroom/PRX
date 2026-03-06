@@ -141,6 +141,20 @@ class TestEulerDiscreteScheduler:
         prev = sched.step(zero_vel, sched.timesteps[0], sample)
         assert torch.allclose(prev, sample)
 
+    # -- timestep_distribution --
+
+    def test_init_default_distribution(self) -> None:
+        sched = EulerDiscreteScheduler()
+        assert sched.timestep_distribution == "logit_normal"
+
+    def test_init_custom_distribution(self) -> None:
+        sched = EulerDiscreteScheduler(timestep_distribution="uniform")
+        assert sched.timestep_distribution == "uniform"
+
+    def test_init_invalid_distribution(self) -> None:
+        with pytest.raises(ValueError, match="timestep_distribution must be"):
+            EulerDiscreteScheduler(timestep_distribution="cosine")
+
     # -- sample_timesteps --
 
     def test_sample_timesteps_shape_and_range(self) -> None:
@@ -152,6 +166,20 @@ class TestEulerDiscreteScheduler:
 
     def test_sample_timesteps_custom_range(self) -> None:
         sched = EulerDiscreteScheduler()
+        ts = sched.sample_timesteps(32, device=torch.device("cpu"), timesteps_range=(0.2, 0.8))
+        assert ts.shape == (32,)
+        assert ts.min() >= 0.2 - 1e-6
+        assert ts.max() <= 0.8 + 1e-6
+
+    def test_sample_timesteps_uniform_shape_and_range(self) -> None:
+        sched = EulerDiscreteScheduler(timestep_distribution="uniform")
+        ts = sched.sample_timesteps(64, device=torch.device("cpu"))
+        assert ts.shape == (64,)
+        assert ts.min() >= 0.0
+        assert ts.max() <= 1.0
+
+    def test_sample_timesteps_uniform_custom_range(self) -> None:
+        sched = EulerDiscreteScheduler(timestep_distribution="uniform")
         ts = sched.sample_timesteps(32, device=torch.device("cpu"), timesteps_range=(0.2, 0.8))
         assert ts.shape == (32,)
         assert ts.min() >= 0.2 - 1e-6
