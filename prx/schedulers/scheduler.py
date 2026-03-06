@@ -18,6 +18,7 @@ class BaseScheduler(ABC, nn.Module):
         super().__init__()
         self.config = config
         self.num_train_timesteps = config.num_train_timesteps
+        self.timestep_distribution = "logit_normal"
 
     @abstractmethod
     def add_noise(
@@ -99,6 +100,10 @@ class BaseScheduler(ABC, nn.Module):
         assert timestep_min >= 0
         assert timestep_max <= 1
 
+        if self.timestep_distribution == "uniform":
+            timesteps = timestep_min + torch.rand(size, device=device) * (timestep_max - timestep_min)
+            return self.shift_timesteps(timesteps)
+
         timesteps = torch.tensor([], device=device)  # reset timesteps
         while timesteps.size(0) < size:  # make sure we have enough valid timesteps
             timesteps = torch.cat([timesteps, log_normal_sample(size, timestep_min, timestep_max)])
@@ -149,6 +154,7 @@ class EulerDiscreteScheduler(BaseScheduler):
         config: SchedulerConfig | None = None,
         num_train_timesteps: int = 1000,
         shift: float = 1.0,
+        timestep_distribution: str = "logit_normal",
     ):
         """Initialize Euler Discrete Scheduler.
 
@@ -156,6 +162,7 @@ class EulerDiscreteScheduler(BaseScheduler):
             config: Scheduler configuration
             num_train_timesteps: Number of training timesteps
             shift: Time shift parameter (default: 1.0, no shift)
+            timestep_distribution: Sampling distribution for training timesteps ("logit_normal" or "uniform")
         """
         if config is None:
             config = SchedulerConfig(
@@ -164,7 +171,12 @@ class EulerDiscreteScheduler(BaseScheduler):
             )
         super().__init__(config)
 
+        if timestep_distribution not in ("logit_normal", "uniform"):
+            raise ValueError(
+                f"timestep_distribution must be 'logit_normal' or 'uniform', got '{timestep_distribution}'"
+            )
         self.shift = shift
+        self.timestep_distribution = timestep_distribution
         self.timesteps = None
         self.sigmas = None
 
