@@ -25,7 +25,7 @@ from torchmetrics.image.fid import FrechetInceptionDistance
 
 from .feature_extractors import CLIPFeatureExtractor, DINOFeatureExtractor
 from prx.dataset.constants import BatchKeys
-from prx.pipeline.pipeline import Pipeline 
+from prx.pipeline.composer_pipeline import ComposerFMPipeline
 
 _logger = logging.getLogger(__name__)
 
@@ -319,7 +319,7 @@ class LogQualityMetrics(Callback):
         self._per_worker_limit = 0
         self._metric_computation_done = False
 
-    def get_model(self, state: State) -> Pipeline:
+    def get_model(self, state: State) -> ComposerFMPipeline:
         if isinstance(state.model, DistributedDataParallel):
             return state.model.module
         return state.model

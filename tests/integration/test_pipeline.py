@@ -1,8 +1,8 @@
 """Integration tests for the full training pipeline.
 
 Two test classes:
-- TestPipelineLightweight: tiny PRX + identity VAE + pre-computed embeddings (no text encoder)
-- TestPipelineEndToEnd: tiny PRX + FLUX VAE + real T5Gemma-2B text encoder (GPU)
+- TestComposerFMPipelineLightweight: tiny PRX + identity VAE + pre-computed embeddings (no text encoder)
+- TestComposerFMPipelineEndToEnd: tiny PRX + FLUX VAE + real T5Gemma-2B text encoder (GPU)
 """
 
 from unittest.mock import MagicMock
@@ -14,7 +14,7 @@ from prx.dataset.constants import BatchKeys
 from prx.models.prx import PRX, PRXParams
 from prx.models.text_tower import TextTower
 from prx.models.vae_tower import VaeTower
-from prx.pipeline.pipeline import Pipeline
+from prx.pipeline.composer_pipeline import ComposerFMPipeline
 from prx.schedulers.scheduler import EulerDiscreteScheduler, SchedulerConfig
 
 
@@ -71,8 +71,8 @@ def device() -> torch.device:
 
 
 @pytest.fixture(scope="module")
-def lightweight_pipeline(device: torch.device) -> Pipeline:
-    """Pipeline with tokenizer-only text tower and pre-computed embeddings."""
+def lightweight_pipeline(device: torch.device) -> ComposerFMPipeline:
+    """ComposerFMPipeline with tokenizer-only text tower and pre-computed embeddings."""
     text_tower = TextTower(
         model_name="Qwen/Qwen3-VL-2B-Instruct",
         only_tokenizer=True,
@@ -83,7 +83,7 @@ def lightweight_pipeline(device: torch.device) -> Pipeline:
         skip_text_cleaning=True,
     )
     context_dim = 32
-    model = Pipeline(
+    model = ComposerFMPipeline(
         denoiser=_tiny_prx(context_dim=context_dim, in_channels=3),
         vae=_make_identity_vae(),
         text_tower=text_tower,
@@ -102,7 +102,7 @@ def lightweight_pipeline(device: torch.device) -> Pipeline:
 
 
 def _make_precomputed_batch(
-    pipeline: Pipeline,
+    pipeline: ComposerFMPipeline,
     device: torch.device,
     batch_size: int = 2,
 ) -> dict:
@@ -122,22 +122,22 @@ def _make_precomputed_batch(
 
 @pytest.mark.integration
 @pytest.mark.gpu
-class TestPipelineLightweight:
+class TestComposerFMPipelineLightweight:
     """Forward + backward with pre-computed embeddings (no text encoder download)."""
 
-    def test_forward_keys(self, lightweight_pipeline: Pipeline, device: torch.device) -> None:
+    def test_forward_keys(self, lightweight_pipeline: ComposerFMPipeline, device: torch.device) -> None:
         outputs = lightweight_pipeline.forward(_make_precomputed_batch(lightweight_pipeline, device))
         for key in ("prediction", "target", "timesteps", "noised_latents"):
             assert key in outputs
 
-    def test_forward_shapes(self, lightweight_pipeline: Pipeline, device: torch.device) -> None:
+    def test_forward_shapes(self, lightweight_pipeline: ComposerFMPipeline, device: torch.device) -> None:
         bs = 2
         outputs = lightweight_pipeline.forward(_make_precomputed_batch(lightweight_pipeline, device, bs))
         assert outputs["prediction"].shape == outputs["target"].shape
         assert outputs["prediction"].shape[0] == bs
         assert outputs["timesteps"].shape == (bs,)
 
-    def test_loss_and_backward(self, lightweight_pipeline: Pipeline, device: torch.device) -> None:
+    def test_loss_and_backward(self, lightweight_pipeline: ComposerFMPipeline, device: torch.device) -> None:
         batch = _make_precomputed_batch(lightweight_pipeline, device)
         outputs = lightweight_pipeline.forward(batch)
         loss = lightweight_pipeline.loss(outputs, batch)
@@ -153,7 +153,7 @@ class TestPipelineLightweight:
         )
         assert has_grad, "denoiser should have non-zero gradients"
 
-    def test_two_steps_loss_changes(self, lightweight_pipeline: Pipeline, device: torch.device) -> None:
+    def test_two_steps_loss_changes(self, lightweight_pipeline: ComposerFMPipeline, device: torch.device) -> None:
         optimizer = torch.optim.AdamW(lightweight_pipeline.denoiser.parameters(), lr=1e-3)
         torch.manual_seed(42)
         losses: list[float] = []
@@ -172,8 +172,8 @@ class TestPipelineLightweight:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
-def full_pipeline(device: torch.device) -> Pipeline:
-    """Pipeline with real T5Gemma-2B text encoder and FLUX VAE."""
+def full_pipeline(device: torch.device) -> ComposerFMPipeline:
+    """ComposerFMPipeline with real T5Gemma-2B text encoder and FLUX VAE."""
     text_tower = TextTower(
         model_name="google/t5gemma-2b-2b-ul2",
         only_tokenizer=False,
@@ -185,7 +185,7 @@ def full_pipeline(device: torch.device) -> Pipeline:
     )
     vae = _make_flux_vae()
     context_dim = text_tower.hidden_size
-    model = Pipeline(
+    model = ComposerFMPipeline(
         denoiser=_tiny_prx(context_dim=context_dim, in_channels=vae.latent_channels),
         vae=vae,
         text_tower=text_tower,
@@ -212,10 +212,10 @@ def _make_text_batch(device: torch.device, batch_size: int = 2) -> dict:
 
 @pytest.mark.integration
 @pytest.mark.gpu
-class TestPipelineEndToEnd:
+class TestComposerFMPipelineEndToEnd:
     """End-to-end pipeline with real text encoder, FLUX VAE, and caption dropout."""
 
-    def test_forward_with_text_prompts(self, full_pipeline: Pipeline, device: torch.device) -> None:
+    def test_forward_with_text_prompts(self, full_pipeline: ComposerFMPipeline, device: torch.device) -> None:
         batch = _make_text_batch(device)
         outputs = full_pipeline.forward(batch)
 
@@ -223,7 +223,7 @@ class TestPipelineEndToEnd:
         assert outputs["prediction"].shape[0] == 2
         assert not torch.isnan(outputs["prediction"]).any()
 
-    def test_loss_and_backward_with_text(self, full_pipeline: Pipeline, device: torch.device) -> None:
+    def test_loss_and_backward_with_text(self, full_pipeline: ComposerFMPipeline, device: torch.device) -> None:
         batch = _make_text_batch(device)
         outputs = full_pipeline.forward(batch)
         loss = full_pipeline.loss(outputs, batch)

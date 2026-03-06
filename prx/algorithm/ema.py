@@ -21,7 +21,7 @@ import composer.utils.misc as misc
 from composer.core import Algorithm, Event, State, Time, TimeUnit
 from composer.loggers import Logger
 
-from prx.pipeline.pipeline import EMAModel
+from prx.pipeline.composer_pipeline import EMAModel
 
 log = logging.getLogger(__name__)
 

@@ -75,7 +75,7 @@ class LPIPS(Algorithm):
         model = state.model.module if hasattr(state.model, "module") else state.model
 
         # Guard: LPIPS requires x-prediction mode (denoiser outputs x0, not velocity)
-        from prx.pipeline.pipeline import PredictionType
+        from prx.pipeline.composer_pipeline import PredictionType
         pred_type = model.noise_scheduler.config.prediction_type
         if pred_type != PredictionType.X_PREDICTION_FLOW_MATCHING:
             raise ValueError(

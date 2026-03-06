@@ -11,7 +11,7 @@ from prx.models.prx import PRX
 
 from prx.schedulers.scheduler import EulerDiscreteScheduler, SchedulerConfig
 
-from .pipeline import Pipeline
+from .composer_pipeline import ComposerFMPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ def build_pipeline(
     vae_config: dict[str, Any],
     scheduler_config: dict[str, Any],
 
-    # Pipeline settings
+    # ComposerFMPipeline settings
     input_size: int = 512,
     p_drop_caption: float = 0.1,
 
@@ -104,7 +104,7 @@ def build_pipeline(
     denoiser_dtype: str | torch.dtype | None = None,
 
     **kwargs: Any,
-) -> Pipeline:
+) -> ComposerFMPipeline:
     """Build diffusion pipeline from Hydra-composed configs.
     config groups instead of string references to Python objects.
 
@@ -123,10 +123,10 @@ def build_pipeline(
         negative_prompt: Default negative prompt
         latent_channels: Override denoiser in_channels if specified
         denoiser_dtype: Override denoiser dtype
-        **kwargs: Additional args passed to Pipeline
+        **kwargs: Additional args passed to ComposerFMPipeline
 
     Returns:
-        Pipeline pipeline instance
+        ComposerFMPipeline pipeline instance
     """
     device = _get_device()
 
@@ -190,7 +190,7 @@ def build_pipeline(
     logger.info("Total denoiser params: %.3fB", sum(p.numel() for p in denoiser.parameters()) / 1e9)
 
     # Build pipeline
-    pipeline = Pipeline(
+    pipeline = ComposerFMPipeline(
         denoiser=denoiser,
         vae=vae,
         text_tower=text_tower,
