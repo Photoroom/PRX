@@ -2,3 +2,4 @@
 prediction_type: flow_matching
 num_train_timesteps: 1000
 timestep_shift: 1.0
+timestep_distribution: logit_normal

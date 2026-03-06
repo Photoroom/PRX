@@ -68,9 +68,10 @@ def build_schedulers(scheduler_config: dict[str, Any]) -> Schedulers:
     )
 
     shift = float(scheduler_config.get('timestep_shift', 1.0))
+    timestep_distribution = scheduler_config.get('timestep_distribution', 'logit_normal')
     return Schedulers(
-        train=EulerDiscreteScheduler(config=config, shift=shift),
-        inference=EulerDiscreteScheduler(config=config, shift=shift),
+        train=EulerDiscreteScheduler(config=config, shift=shift, timestep_distribution=timestep_distribution),
+        inference=EulerDiscreteScheduler(config=config, shift=shift, timestep_distribution=timestep_distribution),
     )
 
 
