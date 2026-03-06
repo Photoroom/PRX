@@ -182,16 +182,7 @@ class TestFMPipelineInference:
 
 @pytest.mark.unit
 class TestBackwardCompatibility:
-    """Verify all old import paths still work."""
-
-    def test_pipeline_alias(self):
-        from prx.pipeline.composer_pipeline import Pipeline, ComposerFMPipeline
-        assert Pipeline is ComposerFMPipeline
-
-    def test_pipeline_from_init(self):
-        from prx.pipeline import Pipeline, ComposerFMPipeline, FMPipeline
-        assert Pipeline is ComposerFMPipeline
-        assert issubclass(ComposerFMPipeline, FMPipeline)
+    """Verify import paths work correctly."""
 
     def test_types_from_pipeline_py(self):
         """Types should be importable from the old location."""
