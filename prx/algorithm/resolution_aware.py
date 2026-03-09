@@ -9,7 +9,7 @@ Two modes:
 """
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 import torch
 from torch import nn, Tensor
@@ -28,7 +28,7 @@ class ResolutionEmbedder(nn.Module):
     In 'token' mode: returns two tokens [B, 2, hidden_size] to prepend to text.
     """
 
-    def __init__(self, hidden_size: int, mode: str = "token", max_period: int = 10000):
+    def __init__(self, hidden_size: int, mode: Literal["vec", "token"] = "token", max_period: int = 10000):
         super().__init__()
         self.mode = mode
         self.max_period = max_period
@@ -64,7 +64,7 @@ class ResolutionAware(Algorithm):
         max_period: Controls sinusoidal embedding frequency range.
     """
 
-    def __init__(self, mode: str = "token", max_period: int = 10000):
+    def __init__(self, mode: Literal["vec", "token"] = "token", max_period: int = 10000):
         super().__init__()
         self.mode = mode
         self.max_period = max_period
@@ -132,6 +132,8 @@ class ResolutionAware(Algorithm):
 
         # Pre-hook on denoiser.forward: capture (B, H, W, device) from image_latent
         def denoiser_pre_hook(module: nn.Module, args: tuple, kwargs: dict) -> None:
+            if not args and "image_latent" not in kwargs:
+                raise ValueError("denoiser.forward() called without image_latent as positional or keyword argument")
             image_latent = args[0] if args else kwargs["image_latent"]
             B, _C, H, W = image_latent.shape
             hook_state["B"] = B
