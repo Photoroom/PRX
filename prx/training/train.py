@@ -20,6 +20,7 @@ from streaming.base.distributed import maybe_init_dist
 from torch import distributed as torch_dist
 from torch.nn.parallel import DistributedDataParallel
 
+from prx.models.tao_fp8 import LinearFP8
 from prx.training.seed_utils import set_seeds
 
 
@@ -70,6 +71,11 @@ def train(config: DictConfig) -> None:
     # Instantiate model
     model: ComposerModel = hydra.utils.instantiate(config.model)
 
+    # Convert Linear layers to FP8 if configured (must happen before FSDP wrapping)
+    fp8_config = config.get("fp8", {})
+    fp8_converter = LinearFP8(**fp8_config)
+    fp8_converter.convert_model(model)
+
     # Build algorithms before optimizer creation
     # This allows algorithms to add modules to the pipeline before optimization
     algorithms: list[Algorithm] = []
@@ -86,6 +92,8 @@ def train(config: DictConfig) -> None:
 
     # Create optimizer (includes any modules added by algorithms)
     optimizer = hydra.utils.instantiate(config.optimizer, model=model)
+
+    fp8_converter.add_optimizer_hook(optimizer, model)
 
     # Create dataloaders
     train_dataset = hydra.utils.instantiate(config.dataset.train_dataset)

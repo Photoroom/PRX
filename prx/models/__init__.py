@@ -14,6 +14,7 @@ from .prx_layers import (
     get_image_ids,
     timestep_embedding,
 )
+from .tao_fp8 import LinearFP8
 
 __all__ = [
     # PRX models
@@ -33,4 +34,6 @@ __all__ = [
     "TextTower",
     # VAE tower
     "VaeTower",
+    # FP8
+    "LinearFP8",
 ]
