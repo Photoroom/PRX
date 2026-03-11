@@ -8,11 +8,11 @@ from typing import Any, Dict, Optional
 import pytest
 import torch
 import torch.nn.functional as F
-from composer.core import Time, Timestamp, TimeUnit
+from composer.core import Time, Timestamp
 from torch import Tensor, nn
 
 from prx.dataset.constants import BatchKeys
-from prx.pipeline.pipeline import EMAModel
+from prx.pipeline.fm_pipeline import EMAModel
 
 
 def pytest_configure(config: object) -> None:
