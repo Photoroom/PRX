@@ -15,16 +15,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -e ".[all]"
+        run: uv sync --extra all
 
       - name: Run unit tests
-        run: pytest -m unit -v
+        run: uv run pytest -m unit -v
 
       - name: Run non-GPU integration tests
-        run: pytest -m "integration and not gpu" -v
+        run: uv run pytest -m "integration and not gpu" -v
