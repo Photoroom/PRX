@@ -150,7 +150,7 @@ class TextTower(torch.nn.Module, ModuleUtilsMixin):
         text = re.sub(r"(\D[,\./])\b", r"\1 ", text)
         text = re.sub(r"\s+", " ", text)
 
-        text.strip()
+        text = text.strip()
 
         text = re.sub(r"^[\"\']([\w\W]+)[\"\']$", r"\1", text)
         text = re.sub(r"^[\'\_,\-\:;]", r"", text)

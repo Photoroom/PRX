@@ -208,10 +208,10 @@ class RBFMMDMetric(Metric):
             real_local.to(device), fake_local.to(device), sigma=self.sigma, scale=self.scale, chunk_size=self.chunk_size
         )
 
-        def reset(self) -> None:
-            super().reset()
-            self.real_feats.clear()
-            self.fake_feats.clear()
+    def reset(self) -> None:
+        super().reset()
+        self.real_feats.clear()
+        self.fake_feats.clear()
 
 
 @dataclass
