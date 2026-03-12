@@ -1,3 +1,4 @@
+# @package _global_
 defaults:
   - /pipeline: prx_jit_32
   - /optimizer: adamw

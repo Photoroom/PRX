@@ -93,7 +93,7 @@ class LPIPS(Algorithm):
         def hook_fn(module: torch.nn.Module, input: Any, output: torch.Tensor) -> None:
             algo._stashed_x0_pred = output
 
-        model.denoiser.register_forward_hook(hook_fn)
+        self._hook_handle = model.denoiser.register_forward_hook(hook_fn)
 
         # Wrap loss
         self._wrap_loss_method(state)

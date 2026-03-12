@@ -202,7 +202,8 @@ class PatchedStream(Stream):
                     + "`download_timeout` value or check the local rank 0 traceback.",
                 )
         try:
-            obj = json.load(open(filepath))
+            with open(filepath) as f:
+                obj = json.load(f)
         except json.decoder.JSONDecodeError as error:
             error.args = (f"Index file at {filepath} is empty or corrupted. " + error.args[0],)
             raise error
