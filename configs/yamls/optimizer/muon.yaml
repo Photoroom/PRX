@@ -2,6 +2,7 @@
 # orthogonalization, everything else falls back to Adam.
 _target_: prx.training.optimizer.create_muon_optimizer
 _recursive_: false
+_convert_: partial
 muon_name_filter: blocks
 muon_config:
   lr: 1.0e-4
