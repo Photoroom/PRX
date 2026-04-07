@@ -1,5 +1,6 @@
 _target_: prx.training.optimizer.create_standard_optimizer
 _recursive_: false
+_convert_: partial
 optimizer_class: torch.optim.AdamW
 lr: 1.0e-4
 weight_decay: 0.
