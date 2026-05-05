@@ -5,12 +5,27 @@
   <img src="assets/mosaic.png" alt="PRX samples" width="900">
 </p>
 
+<p align="center">
+  <a href="https://huggingface.co/collections/Photoroom/prx"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Models-PRX%20Collection-yellow" alt="HF Collection"></a>
+  <a href="https://huggingface.co/Photoroom/prx-1024-t2i-beta"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Checkpoint-PRX--1024--beta-yellow" alt="HF prx-1024-t2i-beta"></a>
+  <a href="https://huggingface.co/spaces/Photoroom/PRX-1024-beta-version"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Demo-PRX--1024-blue" alt="HF Demo Space"></a>
+  <a href="https://huggingface.co/docs/diffusers/main/en/api/pipelines/prx"><img src="https://img.shields.io/badge/%F0%9F%A7%A8%20Diffusers-Integrated-orange" alt="Diffusers"></a>
+  <a href="https://huggingface.co/blog/Photoroom/prx-open-source-t2i-model"><img src="https://img.shields.io/badge/%F0%9F%93%9D%20Blog-Series-ff69b4" alt="Blog series"></a>
+  <a href="https://discord.gg/6ynxQ5dttw"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-green" alt="Apache 2.0"></a>
+</p>
+
 
 # PRX
 
 Training framework for the PRX text-to-image diffusion models by [Photoroom](https://www.photoroom.com/).
 
-Read the full story on the [Hugging Face blog](https://huggingface.co/blog/Photoroom/prx-open-source-t2i-model).
+The full story is on the Hugging Face blog:
+
+- [PRX: an open-source text-to-image model](https://huggingface.co/blog/Photoroom/prx-open-source-t2i-model) — overview and motivation
+- [Part 1 — Architectural experiments](https://huggingface.co/blog/Photoroom/prx-part1-architectures)
+- [Part 2 — Training design and ablations](https://huggingface.co/blog/Photoroom/prx-part2)
+- [Part 3 — Training a T2I model in 24h](https://huggingface.co/blog/Photoroom/prx-part3)
 
 ## Overview
 
@@ -24,7 +39,43 @@ PRX is a transformer-based latent diffusion model trained with flow matching. Th
 
 ## Pre-trained models
 
-Pre-trained PRX models are available on Hugging Face and can be used directly with [diffusers](https://huggingface.co/Photoroom/prx-1024-t2i-beta).
+Pre-trained PRX models are available on Hugging Face and integrated into [🧨 Diffusers](https://huggingface.co/docs/diffusers/main/en/api/pipelines/prx). Browse the full [PRX collection](https://huggingface.co/collections/Photoroom/prx) or pick a variant:
+
+| Model | Resolution | VAE | SFT | Distilled | Notes |
+|---|---|---|---|---|---|
+| [`Photoroom/prx-1024-t2i-beta`](https://huggingface.co/Photoroom/prx-1024-t2i-beta) | 1024 | Flux | – | – | Headline beta model |
+| [`Photoroom/prx-512-t2i`](https://huggingface.co/Photoroom/prx-512-t2i) | 512 | Flux | – | – | Base 512px |
+| [`Photoroom/prx-512-t2i-sft`](https://huggingface.co/Photoroom/prx-512-t2i-sft) | 512 | Flux | ✓ | – | Alchemist-SFT |
+| [`Photoroom/prx-512-t2i-sft-distilled`](https://huggingface.co/Photoroom/prx-512-t2i-sft-distilled) | 512 | Flux | ✓ | ✓ | 8-step, cfg=1.0 |
+| [`Photoroom/prx-512-t2i-dc-ae`](https://huggingface.co/Photoroom/prx-512-t2i-dc-ae) | 512 | DC-AE | – | – | 32× compression VAE |
+| [`Photoroom/prx-512-t2i-dc-ae-sft`](https://huggingface.co/Photoroom/prx-512-t2i-dc-ae-sft) | 512 | DC-AE | ✓ | – | |
+| [`Photoroom/prx-512-t2i-dc-ae-sft-distilled`](https://huggingface.co/Photoroom/prx-512-t2i-dc-ae-sft-distilled) | 512 | DC-AE | ✓ | ✓ | 8-step, cfg=1.0 |
+| [`Photoroom/prx-256-t2i`](https://huggingface.co/Photoroom/prx-256-t2i) | 256 | Flux | – | – | Base 256px |
+| [`Photoroom/prx-256-t2i-sft`](https://huggingface.co/Photoroom/prx-256-t2i-sft) | 256 | Flux | ✓ | – | |
+| **PRX-7B** *(in progress)* | – | – | – | – | Scaling experiment, see Part 4 (coming soon) |
+
+Default inference settings: 28 steps, `cfg=5.0`, `torch.bfloat16`. Distilled variants use 8 steps, `cfg=1.0`.
+
+## Inference
+
+```python
+import torch
+from diffusers import PRXPipeline
+
+pipe = PRXPipeline.from_pretrained(
+    "Photoroom/prx-1024-t2i-beta",
+    torch_dtype=torch.bfloat16,
+).to("cuda")
+
+image = pipe(
+    "a front-facing portrait of a lion in the golden savanna at sunset",
+    num_inference_steps=28,
+    guidance_scale=5.0,
+).images[0]
+image.save("prx.png")
+```
+
+See the [Diffusers PRX docs](https://huggingface.co/docs/diffusers/main/en/api/pipelines/prx) for manual component loading and memory-saving options, or try the [live demo](https://huggingface.co/spaces/Photoroom/PRX-1024-beta-version).
 
 ## Installation
 
@@ -111,6 +162,19 @@ composer -m prx.training.train \
 
 See the [JIT-benchmark configs](configs/yamls/JIT-benchmark/) for full training configuration examples.
 
+
+## Citation
+
+If you use PRX, please cite:
+
+```bibtex
+@misc{photoroom2026prx,
+  title  = {PRX: an open-source text-to-image model},
+  author = {Bertoin, David and Frigg, Roman and Almazán, Jon and Andres, Eliot},
+  year   = {2026},
+  url    = {https://huggingface.co/blog/Photoroom/prx-open-source-t2i-model},
+}
+```
 
 ## License
 
