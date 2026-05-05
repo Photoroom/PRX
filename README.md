@@ -12,6 +12,7 @@
   <a href="https://huggingface.co/docs/diffusers/main/en/api/pipelines/prx"><img src="https://img.shields.io/badge/%F0%9F%A7%A8%20Diffusers-Integrated-orange" alt="Diffusers"></a>
   <a href="https://huggingface.co/blog/Photoroom/prx-open-source-t2i-model"><img src="https://img.shields.io/badge/%F0%9F%93%9D%20Blog-Series-ff69b4" alt="Blog series"></a>
   <a href="https://discord.gg/6ynxQ5dttw"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://github.com/Photoroom/PRX/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Photoroom/PRX/tests.yml?branch=main&label=Tests" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-green" alt="Apache 2.0"></a>
 </p>
 
