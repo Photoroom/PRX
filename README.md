@@ -130,24 +130,29 @@ _target_: prx.dataset.StreamingProcessedDataset
 local:
   - /path/to/output/fine-t2i
 
-caption_keys:
-  - [prompt, 0.5]
-  - [enhanced_prompt, 0.5]
-has_text_latents: false
-text_tower: ${diffusion_text_tower.preset_name}
-cache_limit: 8tb
-drop_last: true
-shuffle: true
-batching_method: device_per_stream
-num_workers: 8
-persistent_workers: true
-pin_memory: true
-transforms:
-  - _target_: prx.dataset.transforms.ArAwareResize
-    default_image_size: ${image_size}
-    patch_size_pixels: ${patch_size_pixels}
-transforms_targets:
-  - image
+streaming:
+  cache_limit: 8tb
+  shuffle: true
+  batching_method: device_per_stream
+
+processed:
+  caption_keys:
+    - [prompt, 0.5]
+    - [enhanced_prompt, 0.5]
+  has_text_latents: false
+  text_tower: ${diffusion_text_tower.preset_name}
+  transforms:
+    - _target_: prx.dataset.transforms.ArAwareResize
+      default_image_size: ${image_size}
+      patch_size_pixels: ${patch_size_pixels}
+  transforms_targets:
+    - image
+
+dataloader:
+  drop_last: true
+  num_workers: 8
+  persistent_workers: true
+  pin_memory: true
 ```
 
 > **Note:** `ArAwareResize` is still used at training time even though images were already resized during MDS export. The MDS conversion targets a fixed 1024-base resolution, but the training config may use a different `image_size` (e.g. 512 for early-stage training). `ArAwareResize` ensures images are resized to match the model's current resolution and patch grid, and also handles any JPEG decode size differences.
