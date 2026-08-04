@@ -131,11 +131,13 @@ local:
   - /path/to/output/fine-t2i
 
 streaming:
+  _target_: prx.dataset.mds_dataset.StreamingConfig
   cache_limit: 8tb
   shuffle: true
   batching_method: device_per_stream
 
 processed:
+  _target_: prx.dataset.mds_dataset.ProcessedConfig
   caption_keys:
     - [prompt, 0.5]
     - [enhanced_prompt, 0.5]
@@ -149,6 +151,7 @@ processed:
     - image
 
 dataloader:
+  _target_: prx.dataset.mds_dataset.DataLoaderConfig
   drop_last: true
   num_workers: 8
   persistent_workers: true

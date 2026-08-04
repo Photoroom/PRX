@@ -9,12 +9,14 @@ local:
   - /mnt/data/datasets/gen_ai/t2i_1024_t5gemma2b/SYNTHETIC
 
 streaming:
+  _target_: prx.dataset.mds_dataset.StreamingConfig
   cache_limit: 8tb
   download_timeout: 7200
   shuffle: true
   batching_method: device_per_stream
 
 processed:
+  _target_: prx.dataset.mds_dataset.ProcessedConfig
   caption_keys: caption_moondream
   text_tower: ${diffusion_text_tower.preset_name}
   has_mask_text_latents: true
@@ -26,6 +28,7 @@ processed:
     - image
 
 dataloader:
+  _target_: prx.dataset.mds_dataset.DataLoaderConfig
   drop_last: true
   prefetch_factor: 2
   num_workers: 8
