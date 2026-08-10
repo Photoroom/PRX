@@ -1,9 +1,9 @@
 import json
 import os
 import warnings
+from dataclasses import dataclass, field
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
-
 
 from torch.utils.data import DataLoader
 
@@ -230,16 +230,11 @@ class PatchedStream(Stream):
         filepath = os.path.join(self.local, self.split, self.index_file)
         return os.stat(filepath).st_size
 
-
-class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
-    """Dataset that combines MosaicML streaming with sample processing.
-
+@dataclass
+class StreamingConfig:
+    """Configuration used by MosaicML streaming.
+    
     Args:
-        local: Local path(s) to dataset folders.
-        remote: Remote path(s) to dataset folders (optional).
-        caption_keys: Caption field name(s), optionally with sampling weights.
-        text_tower: Name of the text encoder preset for latent lookups.
-        prompt_max_tokens: Maximum sequence length for text embeddings.
         download_retry: Number of download retries per shard.
         download_timeout: Timeout in seconds for shard downloads.
         predownload: Number of shards to pre-download per worker.
@@ -248,45 +243,75 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
         batch_size: Batch size for batching method calculations.
         shuffle: Whether to shuffle samples.
         shuffle_seed: Random seed for shuffling.
-        proportions: Sampling proportions for each path.
+        batching_method: How to batch across streams ("per_stream" or "random").
+    """
+    download_retry: int = 2
+    download_timeout: float = 120
+    predownload: int | None = None
+    cache_limit: str = "1tb"
+    num_canonical_nodes: int | None = None
+    batch_size: int | None = None
+    shuffle: bool = False
+    shuffle_seed: int = 9146
+    batching_method: str = "per_stream"
+
+@dataclass
+class ProcessedConfig:
+    """Configuration used by sample processing.
+    
+    Args:
+        caption_keys: Caption field name(s), optionally with sampling weights.
+        text_tower: Name of the text encoder preset for latent lookups.
+        prompt_max_tokens: Maximum sequence length for text embeddings.
         has_text_latents: Whether samples contain precomputed text latents.
         has_mask_text_latents: Whether samples contain attention masks for text latents.
-        batching_method: How to batch across streams ("per_stream" or "random").
         transforms: List of transforms to apply to images.
         transforms_targets: Image keys to apply transforms to.
+    """
+    caption_keys: str | list[str] | list[tuple[str, float]] = "caption"
+    text_tower: str = "t5gemma2b-256-bf16"
+    prompt_max_tokens: int = 256
+    has_text_latents: bool = True
+    has_mask_text_latents: bool = False
+    transforms: list[Callable] | None = None
+    transforms_targets: list[str] | str = field(default_factory = lambda: DEFAULT_DATA_AUG_TARGETS.copy())
+
+@dataclass
+class DataLoaderConfig:
+    """Configuration used by StreamingProcessedDataset dataloader.
+    
+    Args:
         drop_last: Whether to drop the last incomplete batch (default: True).
         prefetch_factor: Number of batches to prefetch per worker (optional).
         num_workers: Number of worker processes for data loading (default: 0).
         persistent_workers: Whether to keep workers alive between epochs (default: False).
         pin_memory: Whether to use pinned memory for faster GPU transfer (default: False).
     """
+    drop_last: bool = True
+    prefetch_factor: int | None = None
+    num_workers: int = 0
+    persistent_workers: bool = False
+    pin_memory: bool = False
 
+class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
+    """Dataset that combines MosaicML streaming with sample processing.
+
+    Args:
+        local: Local path(s) to dataset folders.
+        remote: Remote path(s) to dataset folders (optional).
+        proportions: Sampling proportions for each path.
+        streaming: StreamingConfig 
+        processed: ProcessedConfig
+        dataloader: DataLoaderConfig    
+    """
     def __init__(
         self,
         local: str | list[str],
+        streaming: StreamingConfig,
+        processed: ProcessedConfig,
+        dataloader: DataLoaderConfig,
         remote: str | list[str] | None = None,
-        caption_keys: str | list[str] | list[tuple[str, float]] = "caption",
-        text_tower: str = "t5gemma2b-256-bf16",
-        prompt_max_tokens: int = 256,
-        download_retry: int = 2,
-        download_timeout: float = 120,
-        predownload: int | None = None,
-        cache_limit: str = "1tb",
-        num_canonical_nodes: int | None = None,
-        batch_size: int | None = None,
-        shuffle: bool = False,
-        shuffle_seed: int = 9146,
         proportions: float | list[float] | None = None,
-        has_text_latents: bool = True,
-        has_mask_text_latents: bool = False,
-        batching_method: str = "per_stream",
-        transforms: list[Callable] | None = None,
-        transforms_targets: list[str] | str = DEFAULT_DATA_AUG_TARGETS,
-        drop_last: bool = True,
-        prefetch_factor: int | None = None,
-        num_workers: int = 0,
-        persistent_workers: bool = False,
-        pin_memory: bool = False,
     ):
         # Build streams from paths
         streams = []
@@ -297,8 +322,8 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
                 PatchedStream(
                     remote=r_path,
                     local=l_path,
-                    download_retry=download_retry,
-                    download_timeout=download_timeout,
+                    download_retry=streaming.download_retry,
+                    download_timeout=streaming.download_timeout,
                     index_file=index_file,
                     proportion=proportion,
                 )
@@ -310,38 +335,38 @@ class StreamingProcessedDataset(StreamingDataset, ProcessedDataset):
             remote=None,
             local=None,
             split=None,
-            download_retry=download_retry,
-            download_timeout=download_timeout,
+            download_retry=streaming.download_retry,
+            download_timeout=streaming.download_timeout,
             validate_hash=None,
             keep_zip=False,
-            predownload=predownload,
-            cache_limit=cache_limit,
-            num_canonical_nodes=num_canonical_nodes,
-            batch_size=batch_size,
-            shuffle=shuffle,
-            shuffle_seed=shuffle_seed,
-            batching_method=batching_method,
+            predownload=streaming.predownload,
+            cache_limit=streaming.cache_limit,
+            num_canonical_nodes=streaming.num_canonical_nodes,
+            batch_size=streaming.batch_size,
+            shuffle=streaming.shuffle,
+            shuffle_seed=streaming.shuffle_seed,
+            batching_method=streaming.batching_method,
         )
         ProcessedDataset.__init__(
             self,
-            caption_keys=caption_keys,
-            text_tower=text_tower,
-            prompt_max_tokens=prompt_max_tokens,
-            has_text_latents=has_text_latents,
-            has_mask_text_latents=has_mask_text_latents,
-            transforms=transforms,
-            transforms_targets=transforms_targets,
+            caption_keys=processed.caption_keys,
+            text_tower=processed.text_tower,
+            prompt_max_tokens=processed.prompt_max_tokens,
+            has_text_latents=processed.has_text_latents,
+            has_mask_text_latents=processed.has_mask_text_latents,
+            transforms=processed.transforms,
+            transforms_targets=processed.transforms_targets,
         )
 
         # Store dataloader kwargs
         self._dataloader_kwargs = {
-            "drop_last": drop_last,
-            "num_workers": num_workers,
-            "persistent_workers": persistent_workers,
-            "pin_memory": pin_memory,
+            "drop_last": dataloader.drop_last,
+            "num_workers": dataloader.num_workers,
+            "persistent_workers": dataloader.persistent_workers,
+            "pin_memory": dataloader.pin_memory,
         }
-        if prefetch_factor is not None:
-            self._dataloader_kwargs["prefetch_factor"] = prefetch_factor
+        if dataloader.prefetch_factor is not None:
+            self._dataloader_kwargs["prefetch_factor"] = dataloader.prefetch_factor
 
         # Log summary
         logger.info(
