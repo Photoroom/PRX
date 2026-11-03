@@ -362,8 +362,10 @@ class LogQualityMetrics(Callback):
             self.metrics = {}
 
             if self.compute_fid:
+                # Images are passed to FID as uint8 in [0, 255] (see eval_batch_end), so normalize must be
+                # False. With normalize=True torchmetrics multiplies the uint8 input by 255 again, which wraps.
                 self.metrics["FID"] = {
-                    scale: FrechetInceptionDistance(normalize=True).to(device) for scale in self.guidance_scales
+                    scale: FrechetInceptionDistance(normalize=False).to(device) for scale in self.guidance_scales
                 }
 
             if self.compute_cmmd:
